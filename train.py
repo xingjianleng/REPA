@@ -22,7 +22,7 @@ from models.sit import SiT_models
 from loss import SILoss
 from utils import load_encoders
 
-from dataset import CustomDataset
+from dataset import CustomDataset, CustomZipDataset
 from diffusers.models import AutoencoderKL
 # import wandb_utils
 import wandb
@@ -207,7 +207,17 @@ def main(args):
     )    
     
     # Setup data:
-    train_dataset = CustomDataset(args.data_dir)
+    if (os.path.exists(os.path.join(args.data_dir, "images")) and
+        os.path.exists(os.path.join(args.data_dir, "vae-sd"))):
+        train_dataset = CustomDataset(args.data_dir)
+    elif (os.path.exists(os.path.join(args.data_dir, "images.zip")) and
+          os.path.exists(os.path.join(args.data_dir, "vae-sd.zip"))):
+        train_dataset = CustomZipDataset(args.data_dir)
+    else:
+        raise ValueError("Dataset not found.")
+
+    # The local batch size should be distribtued across all processes; also consider the gradient accumulation steps during weight updates
+    # NOTE: total_bs = local_bs * n_gpus * grad_acc, see notebooks/accelerator.ipynb
     local_batch_size = int(args.batch_size // (accelerator.num_processes * args.gradient_accumulation_steps))
     train_dataloader = DataLoader(
         train_dataset,
