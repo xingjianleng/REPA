@@ -208,7 +208,7 @@ def main(args):
     
     # Setup data:
     train_dataset = CustomDataset(args.data_dir)
-    local_batch_size = int(args.batch_size // accelerator.num_processes)
+    local_batch_size = int(args.batch_size // (accelerator.num_processes * args.gradient_accumulation_steps))
     train_dataloader = DataLoader(
         train_dataset,
         batch_size=local_batch_size,
