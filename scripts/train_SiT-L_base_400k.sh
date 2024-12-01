@@ -1,7 +1,5 @@
 # Reproducing Table 2 in the paper, first line
 accelerate launch train.py \
-    --gradient-accumulation-steps=2 \
-    --max-train-steps=400000 \
     --report-to="wandb" \
     --allow-tf32 \
     --mixed-precision="fp16" \

@@ -1,4 +1,4 @@
-# Reproducing Table 2 in the paper, last line
+# Reproducing Table 3 in the paper, the base SiT-B/2 model
 accelerate launch train.py \
     --report-to="wandb" \
     --allow-tf32 \
@@ -7,10 +7,10 @@ accelerate launch train.py \
     --path-type="linear" \
     --prediction="v" \
     --weighting="uniform" \
-    --model="SiT-L/2" \
-    --enc-type="dinov2-vit-l" \
-    --proj-coeff=0.5 \
+    --model="SiT-B/2" \
+    --enc-type="dinov2-vit-b" \
+    --proj-coeff=0.0 \
     --encoder-depth=8 \
     --output-dir="exps" \
-    --exp-name="sit-l-linear-dinov2-l-enc8-400k" \
+    --exp-name="sit-b-base-400k" \
     --data-dir=data/
