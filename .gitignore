@@ -2,3 +2,5 @@
 .vscode/
 data/
 __pycache__/
+**/job_*.sh
+slurm_outputs/
