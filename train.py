@@ -335,7 +335,15 @@ def main(args):
             ### enter
             if accelerator.sync_gradients:
                 progress_bar.update(1)
-                global_step += 1                
+                global_step += 1
+                # log only when global_step really increments
+                logs = {
+                    "loss": accelerator.gather(loss_mean).mean().detach().item(), 
+                    "proj_loss": accelerator.gather(proj_loss_mean).mean().detach().item(),
+                    "grad_norm": accelerator.gather(grad_norm).mean().detach().item()
+                }
+                progress_bar.set_postfix(**logs)
+                accelerator.log(logs, step=global_step)
             if global_step % args.checkpointing_steps == 0 and global_step > 0:
                 if accelerator.is_main_process:
                     checkpoint = {
@@ -372,14 +380,6 @@ def main(args):
                 accelerator.log({"samples": wandb.Image(array2grid(out_samples)),
                                  "gt_samples": wandb.Image(array2grid(gt_samples))})
                 logging.info("Generating EMA samples done.")
-
-            logs = {
-                "loss": accelerator.gather(loss_mean).mean().detach().item(), 
-                "proj_loss": accelerator.gather(proj_loss_mean).mean().detach().item(),
-                "grad_norm": accelerator.gather(grad_norm).mean().detach().item()
-            }
-            progress_bar.set_postfix(**logs)
-            accelerator.log(logs, step=global_step)
 
             if global_step >= args.max_train_steps:
                 break

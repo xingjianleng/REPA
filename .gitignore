@@ -5,3 +5,5 @@ __pycache__/
 **/job_*.sh
 *.err
 *.out
+wandb/
+exps/
