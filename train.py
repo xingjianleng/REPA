@@ -22,7 +22,7 @@ from models.sit import SiT_models
 from loss import SILoss
 from utils import load_encoders
 
-from dataset import CustomDataset, CustomZipDataset
+from dataset import CustomDataset, CustomZipDataset, CustomH5Dataset
 from diffusers.models import AutoencoderKL
 # import wandb_utils
 import wandb
@@ -210,6 +210,11 @@ def main(args):
     if (os.path.exists(os.path.join(args.data_dir, "images")) and
         os.path.exists(os.path.join(args.data_dir, "vae-sd"))):
         train_dataset = CustomDataset(args.data_dir)
+    elif (os.path.exists(os.path.join(args.data_dir, "images.h5")) and
+          os.path.exists(os.path.join(args.data_dir, "vae-sd.h5")) and
+          os.path.exists(os.path.join(args.data_dir, "images_h5.json")) and
+          os.path.exists(os.path.join(args.data_dir, "vae-sd_h5.json"))):
+            train_dataset = CustomH5Dataset(args.data_dir)
     elif (os.path.exists(os.path.join(args.data_dir, "images.zip")) and
           os.path.exists(os.path.join(args.data_dir, "vae-sd.zip"))):
         train_dataset = CustomZipDataset(args.data_dir)
