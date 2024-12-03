@@ -7,3 +7,5 @@ __pycache__/
 *.out
 wandb/
 exps/
+pretrained_models/
+samples/
