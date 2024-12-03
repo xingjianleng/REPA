@@ -9,3 +9,4 @@ wandb/
 exps/
 pretrained_models/
 samples/
+evals/
