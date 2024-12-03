@@ -93,7 +93,7 @@ def main(args):
     model_string_name = args.model.replace("/", "-")
     ckpt_string_name = os.path.basename(args.ckpt).replace(".pt", "") if args.ckpt else "pretrained"
     folder_name = f"{model_string_name}-{ckpt_string_name}-size-{args.resolution}-vae-{args.vae}-" \
-                  f"cfg-{args.cfg_scale}-seed-{args.global_seed}-{args.mode}"
+                  f"cfg-{args.cfg_scale}-{args.guidance_low}-{args.guidance_high}-seed-{args.global_seed}-{args.mode}"
     sample_folder_dir = f"{args.sample_dir}/{folder_name}"
     if rank == 0:
         os.makedirs(sample_folder_dir, exist_ok=True)
