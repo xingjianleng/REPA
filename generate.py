@@ -91,8 +91,9 @@ def main(args):
 
     # Create folder to save samples:
     model_string_name = args.model.replace("/", "-")
+    exp_name = f"{args.exp_name}-" if args.exp_name else ""
     ckpt_string_name = os.path.basename(args.ckpt).replace(".pt", "") if args.ckpt else "pretrained"
-    folder_name = f"{model_string_name}-{ckpt_string_name}-size-{args.resolution}-vae-{args.vae}-" \
+    folder_name = f"{exp_name}{model_string_name}-{ckpt_string_name}-size-{args.resolution}-vae-{args.vae}-" \
                   f"cfg-{args.cfg_scale}-{args.guidance_low}-{args.guidance_high}-seed-{args.global_seed}-{args.mode}"
     sample_folder_dir = f"{args.sample_dir}/{folder_name}"
 
@@ -191,6 +192,7 @@ if __name__ == "__main__":
 
     # logging/saving:
     parser.add_argument("--ckpt", type=str, default=None, help="Optional path to a SiT checkpoint.")
+    parser.add_argument("--exp-name", type=str, default="")
     parser.add_argument("--sample-dir", type=str, default="samples")
 
     # model

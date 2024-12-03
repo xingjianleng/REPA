@@ -45,6 +45,7 @@ def main(args):
     for ckpt_file in ckpt_files:
         command_list = command_list_base + [
             "--ckpt", os.path.join(args.ckpt_path, "checkpoints", ckpt_file),
+            "--exp-name", os.path.basename(args.ckpt_path),
             "--model", config["model"],
         ]
         try:
