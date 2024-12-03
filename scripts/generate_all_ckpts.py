@@ -32,6 +32,7 @@ def main(args):
         except subprocess.CalledProcessError as e:
             print("Command failed.")
             print("Exit code:", e.returncode)
+        return
 
     assert os.path.exists(os.path.join(args.ckpt_path, "checkpoints")), "No checkpoints found in the specified directory."
     ckpt_files = sorted(os.listdir(os.path.join(args.ckpt_path, "checkpoints")))

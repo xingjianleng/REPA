@@ -95,9 +95,21 @@ def main(args):
     folder_name = f"{model_string_name}-{ckpt_string_name}-size-{args.resolution}-vae-{args.vae}-" \
                   f"cfg-{args.cfg_scale}-{args.guidance_low}-{args.guidance_high}-seed-{args.global_seed}-{args.mode}"
     sample_folder_dir = f"{args.sample_dir}/{folder_name}"
+
+    skip = torch.tensor([False], device=device)
     if rank == 0:
-        os.makedirs(sample_folder_dir, exist_ok=True)
-        print(f"Saving .png samples at {sample_folder_dir}")
+        if os.path.exists(f"{sample_folder_dir}.npz"):
+            skip[0] = True
+            print(f"Skipping sampling as {sample_folder_dir}.npz already exists.")
+        else:
+            os.makedirs(sample_folder_dir, exist_ok=True)
+            print(f"Saving .png samples at {sample_folder_dir}")
+
+    # Broadcast the skip flag to all processes
+    dist.broadcast(skip, src=0)
+    if skip.item():
+        dist.destroy_process_group()
+        return
     dist.barrier()
 
     # Figure out how many samples we need to generate on each GPU and how many iterations we need to run:
