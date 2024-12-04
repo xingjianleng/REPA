@@ -10,3 +10,4 @@ exps/
 pretrained_models/
 samples/
 evals/
+classify_image_graph_def.pb

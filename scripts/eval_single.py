@@ -21,10 +21,13 @@ def main(args):
     # Base files used in evaluation
     assert os.path.exists(os.path.join(args.guided_diffusion_eval_path, "VIRTUAL_imagenet256_labeled.npz"))
     assert os.path.exists(os.path.join(args.guided_diffusion_eval_path, "evaluator.py"))
-    assert os.path.exists(os.path.join(args.guided_diffusion_eval_path, "classify_image_graph_def.pb"))
+    # assert os.path.exists(os.path.join(args.guided_diffusion_eval_path, "classify_image_graph_def.pb"))
     assert os.path.exists(args.npz_path)
 
     output_dir = f"{args.output_path}/{os.path.basename(args.npz_path).replace('.npz', '.csv')}"
+    if os.path.exists(output_dir):
+        print(f"Output file {output_dir} already exists. Skipping...")
+        return
 
     os.makedirs(os.path.dirname(output_dir), exist_ok=True)
     command_list = [

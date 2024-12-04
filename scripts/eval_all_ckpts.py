@@ -23,7 +23,7 @@ def main(args):
     # Base files used in evaluation
     assert os.path.exists(os.path.join(args.guided_diffusion_eval_path, "VIRTUAL_imagenet256_labeled.npz"))
     assert os.path.exists(os.path.join(args.guided_diffusion_eval_path, "evaluator.py"))
-    assert os.path.exists(os.path.join(args.guided_diffusion_eval_path, "classify_image_graph_def.pb"))
+    # assert os.path.exists(os.path.join(args.guided_diffusion_eval_path, "classify_image_graph_def.pb"))
 
     sample_folder_names = []
     output_dirs = []
