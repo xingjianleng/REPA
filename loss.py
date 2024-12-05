@@ -24,7 +24,8 @@ class SILoss:
             accelerator=None, 
             latents_scale=None, 
             latents_bias=None,
-            ):
+            loss_type="cos_sim",
+        ):
         self.prediction = prediction
         self.weighting = weighting
         self.path_type = path_type
@@ -32,6 +33,7 @@ class SILoss:
         self.accelerator = accelerator
         self.latents_scale = latents_scale
         self.latents_bias = latents_bias
+        self.loss_type = loss_type
 
     def interpolant(self, t):
         if self.path_type == "linear":
@@ -80,11 +82,42 @@ class SILoss:
         # projection loss
         proj_loss = 0.
         bsz = zs[0].shape[0]
-        for i, (z, z_tilde) in enumerate(zip(zs, zs_tilde)):
-            for j, (z_j, z_tilde_j) in enumerate(zip(z, z_tilde)):
-                z_tilde_j = torch.nn.functional.normalize(z_tilde_j, dim=-1) 
-                z_j = torch.nn.functional.normalize(z_j, dim=-1) 
-                proj_loss += mean_flat(-(z_j * z_tilde_j).sum(dim=-1))
-        proj_loss /= (len(zs) * bsz)
+        if self.loss_type == "cos_sim":
+            for i, (z, z_tilde) in enumerate(zip(zs, zs_tilde)):
+                for j, (z_j, z_tilde_j) in enumerate(zip(z, z_tilde)):
+                    z_tilde_j = torch.nn.functional.normalize(z_tilde_j, dim=-1) 
+                    z_j = torch.nn.functional.normalize(z_j, dim=-1) 
+                    proj_loss += mean_flat(-(z_j * z_tilde_j).sum(dim=-1))
+            proj_loss /= (len(zs) * bsz)
+
+        elif self.loss_type == "ka_patch":
+            # Kernel Alignment across patches
+            for i, (z, z_tilde) in enumerate(zip(zs, zs_tilde)):
+                # Compute the semantic relation activation matrices A -> (B x L x L), normalize the representation row-wise with L2 norm
+                # The shape of the kernel matrix should be [L x L] for each data in the batch.
+                a_mat = F.normalize(z @ z.transpose(1, 2), dim=-1)
+                a_tilde_mat = F.normalize(z_tilde @ z_tilde.transpose(1, 2), dim=-1)
+                # Compute the element-wise loss
+                proj_loss += torch.sqrt(F.mse_loss(a_mat, a_tilde_mat, reduction='mean'))
+            proj_loss /= len(zs)
+
+        elif self.loss_type == "ka_sample":
+            # Kernel Alignment across samples
+            for i (z, z_tilde) in enumerate(zip(zs, zs_tilde)):
+                # Each data sample is characterized by a [L x D] matrix, we should have a kernel matrix of [B x B] for the mini-batch
+                q_mat = z.view(bsz, -1)
+                q_tilde_mat = z_tilde.view(bsz, -1)
+                # compute the self-correlation within the mini-batch, normalize the Gram matrices row-wise (dim=-1) with L2 norm
+                g_mat = F.normalize(q_mat @ q_mat.transpose(0, 1), dim=-1)
+                g_tilde_mat = F.normalize(q_tilde_mat @ q_tilde_mat.transpose(0, 1), dim=-1)
+                # Compute the element-wise (Fronebius) L2 loss
+                proj_loss += torch.sqrt(F.mse_loss(g_mat, g_tilde_mat, reduction='mean'))
+            proj_loss /= len(zs)
+
+        elif self.loss_type == "ka_channel":
+            raise NotImplementedError("The channel-wise projection loss is not implemented yet.")
+
+        else:
+            raise ValueError(f"Unknown loss type {self.loss_type}")
 
         return denoising_loss, proj_loss
