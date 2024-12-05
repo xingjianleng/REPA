@@ -103,7 +103,7 @@ class SILoss:
 
         elif self.loss_type == "ka_sample":
             # Kernel Alignment across samples
-            for i (z, z_tilde) in enumerate(zip(zs, zs_tilde)):
+            for i, (z, z_tilde) in enumerate(zip(zs, zs_tilde)):
                 # Each data sample is characterized by a [L x D] matrix, we should have a kernel matrix of [B x B] for the mini-batch
                 q_mat = z.view(bsz, -1)
                 q_tilde_mat = z_tilde.view(bsz, -1)
