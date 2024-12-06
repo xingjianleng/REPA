@@ -91,6 +91,7 @@ class SILoss:
             proj_loss /= (len(zs) * bsz)
 
         elif self.loss_type == "ka_patch":
+            # FIXME: This part should be based used in addition to the REPA loss
             # Kernel Alignment across patches
             for i, (z, z_tilde) in enumerate(zip(zs, zs_tilde)):
                 # Compute the semantic relation activation matrices A -> (B x L x L), normalize the representation row-wise with L2 norm
@@ -102,17 +103,7 @@ class SILoss:
             proj_loss /= len(zs)
 
         elif self.loss_type == "ka_sample":
-            # Kernel Alignment across samples
-            for i, (z, z_tilde) in enumerate(zip(zs, zs_tilde)):
-                # Each data sample is characterized by a [L x D] matrix, we should have a kernel matrix of [B x B] for the mini-batch
-                q_mat = z.view(bsz, -1)
-                q_tilde_mat = z_tilde.view(bsz, -1)
-                # compute the self-correlation within the mini-batch, normalize the Gram matrices row-wise (dim=-1) with L2 norm
-                g_mat = F.normalize(q_mat @ q_mat.transpose(0, 1), dim=-1)
-                g_tilde_mat = F.normalize(q_tilde_mat @ q_tilde_mat.transpose(0, 1), dim=-1)
-                # Compute the element-wise (Fronebius) L2 loss
-                proj_loss += torch.sqrt(F.mse_loss(g_mat, g_tilde_mat, reduction='mean'))
-            proj_loss /= len(zs)
+            raise NotImplementedError("The sample-wise projection loss is not implemented yet.")
 
         elif self.loss_type == "ka_channel":
             raise NotImplementedError("The channel-wise projection loss is not implemented yet.")
