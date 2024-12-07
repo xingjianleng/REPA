@@ -79,36 +79,39 @@ class SILoss:
         model_output, zs_tilde  = model(model_input, time_input.flatten(), **model_kwargs)
         denoising_loss = mean_flat((model_output - model_target) ** 2)
 
-        # projection loss
-        proj_loss = 0.
+        # projection and kernel alignment loss
+        proj_loss, ka_loss = 0., 0.
+
         bsz = zs[0].shape[0]
-        if self.loss_type == "cos_sim":
+        if "cos_sim" in self.loss_type:
+            # Avoid the average is taken for previously computed losses, use another variable to store the current loss
+            curr_proj_loss = 0.
             for i, (z, z_tilde) in enumerate(zip(zs, zs_tilde)):
                 for j, (z_j, z_tilde_j) in enumerate(zip(z, z_tilde)):
                     z_tilde_j = torch.nn.functional.normalize(z_tilde_j, dim=-1) 
                     z_j = torch.nn.functional.normalize(z_j, dim=-1) 
-                    proj_loss += mean_flat(-(z_j * z_tilde_j).sum(dim=-1))
-            proj_loss /= (len(zs) * bsz)
+                    curr_proj_loss += mean_flat(-(z_j * z_tilde_j).sum(dim=-1))
+            curr_proj_loss /= (len(zs) * bsz)
+            proj_loss += curr_proj_loss
 
-        elif self.loss_type == "ka_patch":
-            # FIXME: This part should be based used in addition to the REPA loss
-            # Kernel Alignment across patches
+        # Kernel Alignment across patches
+        if "ka_patch" in self.loss_type:
+            # Avoid the average is taken for previously computed losses, use another variable to store the current loss
+            curr_ka_loss = 0.
             for i, (z, z_tilde) in enumerate(zip(zs, zs_tilde)):
                 # Compute the semantic relation activation matrices A -> (B x L x L), normalize the representation row-wise with L2 norm
                 # The shape of the kernel matrix should be [L x L] for each data in the batch.
                 a_mat = F.normalize(z @ z.transpose(1, 2), dim=-1)
                 a_tilde_mat = F.normalize(z_tilde @ z_tilde.transpose(1, 2), dim=-1)
                 # Compute the element-wise loss
-                proj_loss += torch.sqrt(F.mse_loss(a_mat, a_tilde_mat, reduction='mean'))
-            proj_loss /= len(zs)
+                curr_ka_loss += torch.sqrt(F.mse_loss(a_mat, a_tilde_mat, reduction='mean'))
+            curr_ka_loss /= len(zs)
+            ka_loss += curr_ka_loss
 
-        elif self.loss_type == "ka_sample":
+        if "ka_sample" in self.loss_type:
             raise NotImplementedError("The sample-wise projection loss is not implemented yet.")
 
-        elif self.loss_type == "ka_channel":
+        if "ka_channel" in self.loss_type:
             raise NotImplementedError("The channel-wise projection loss is not implemented yet.")
 
-        else:
-            raise ValueError(f"Unknown loss type {self.loss_type}")
-
-        return denoising_loss, proj_loss
+        return denoising_loss, proj_loss, ka_loss
