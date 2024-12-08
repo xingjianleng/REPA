@@ -286,6 +286,27 @@ class SiT(nn.Module):
 
         return x, zs
 
+    def forward_features(self, x, t, y):
+        x = self.x_embedder(x) + self.pos_embed  # (N, T, D), where T = H * W / patch_size ** 2
+        N, T, D = x.shape
+
+        # timestep and class embedding
+        t_embed = self.t_embedder(t)                   # (N, D)
+        y = self.y_embedder(y, self.training)    # (N, D)
+        c = t_embed + y                                # (N, D)
+
+        zs = []
+        for i, block in enumerate(self.blocks):
+            x = block(x, c)                      # (N, T, D)
+            zs.append(x.detach().cpu())
+        x = self.final_layer(x, c)                # (N, T, patch_size ** 2 * out_channels)
+        x = self.unpatchify(x)                   # (N, out_channels, H, W)
+
+        # Reformat zs into a tensor of [B, L, T, D], L is the layer index, currently is a list of [B, T, D]
+        zs = torch.stack(zs, dim=1)
+
+        return x, zs
+
 
 #################################################################################
 #                   Sine/Cosine Positional Embedding Functions                  #
