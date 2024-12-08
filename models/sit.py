@@ -280,11 +280,13 @@ class SiT(nn.Module):
         for i, block in enumerate(self.blocks):
             x = block(x, c)                      # (N, T, D)
             if (i + 1) == self.encoder_depth:
+                # Get the feature before projection
+                fs = [x for _ in range(len(self.projectors))]
                 zs = [projector(x.reshape(-1, D)).reshape(N, T, -1) for projector in self.projectors]
         x = self.final_layer(x, c)                # (N, T, patch_size ** 2 * out_channels)
         x = self.unpatchify(x)                   # (N, out_channels, H, W)
 
-        return x, zs
+        return x, zs, fs
 
     def forward_features(self, x, t, y):
         x = self.x_embedder(x) + self.pos_embed  # (N, T, D), where T = H * W / patch_size ** 2

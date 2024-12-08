@@ -76,7 +76,9 @@ class SILoss:
             model_target = d_alpha_t * images + d_sigma_t * noises
         else:
             raise NotImplementedError() # TODO: add x or eps prediction
-        model_output, zs_tilde  = model(model_input, time_input.flatten(), **model_kwargs)
+        
+        # Noise prediction, features after projection, features before projection
+        model_output, zs_tilde, fs_tilde  = model(model_input, time_input.flatten(), **model_kwargs)
         denoising_loss = mean_flat((model_output - model_target) ** 2)
 
         # projection and kernel alignment loss
@@ -98,11 +100,11 @@ class SILoss:
         if "ka_patch" in self.loss_type:
             # Avoid the average is taken for previously computed losses, use another variable to store the current loss
             curr_ka_loss = 0.
-            for i, (z, z_tilde) in enumerate(zip(zs, zs_tilde)):
+            for i, (z, f_tilde) in enumerate(zip(zs, fs_tilde)):
                 # Compute the semantic relation activation matrices A -> (B x L x L), normalize the representation row-wise with L2 norm
                 # The shape of the kernel matrix should be [L x L] for each data in the batch.
                 a_mat = F.normalize(z @ z.transpose(1, 2), dim=-1)
-                a_tilde_mat = F.normalize(z_tilde @ z_tilde.transpose(1, 2), dim=-1)
+                a_tilde_mat = F.normalize(f_tilde @ f_tilde.transpose(1, 2), dim=-1)
                 # Compute the element-wise loss
                 curr_ka_loss += torch.sqrt(F.mse_loss(a_mat, a_tilde_mat, reduction='mean'))
             curr_ka_loss /= len(zs)
