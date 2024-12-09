@@ -16,6 +16,9 @@ EXPS = {
     # "sit-xl-linear-dinov2-b-enc8-400k-SiT-XL-2-": "sit-xl-linear-dinov2-b-enc8-400k",
     "sit-b-linear-dinov2-b-enc8-patch-0.5-400k-SiT-B-2-": "sit-b-linear-dinov2-b-enc8-patch-0.5-400k",
     "sit-b-linear-dinov2-b-enc8-patch-0.75-400k-SiT-B-2-": "sit-b-linear-dinov2-b-enc8-patch-0.75-400k",
+    "sit-b-linear-dinov2-b-enc8-repa-patch-0.5-400k-SiT-B-2-": "sit-b-linear-dinov2-b-enc8-repa-patch-0.5-400k",
+    "sit-b-linear-dinov2-b-enc8-repa-patch-0.75-400k-SiT-B-2-": "sit-b-linear-dinov2-b-enc8-repa-patch-0.75-400k",
+    "sit-b-linear-dinov2-b-enc8-repa-patch-1.0-400k-SiT-B-2-": "sit-b-linear-dinov2-b-enc8-repa-patch-1.0-400k",
 }
 
 
