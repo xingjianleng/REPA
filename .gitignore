@@ -5,9 +5,9 @@ __pycache__/
 **/job_*.sh
 *.err
 *.out
-wandb/
+wandb*
 exps*
-pretrained_models/
-samples/
-evals/
+pretrained_models*
+samples*
+evals*
 classify_image_graph_def.pb
