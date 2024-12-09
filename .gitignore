@@ -1,12 +1,12 @@
 *.DS_Store
 .vscode/
-data/
+data*
 __pycache__/
 **/job_*.sh
 *.err
 *.out
 wandb/
-exps/
+exps*
 pretrained_models/
 samples/
 evals/
