@@ -13,21 +13,14 @@ import math
 from timm.models.vision_transformer import PatchEmbed, Attention, Mlp
 
 
-def build_mlp(hidden_size, projector_dim, z_dim):
-    return nn.Sequential(
-                nn.Linear(hidden_size, projector_dim),
-                nn.SiLU(),
-                nn.Linear(projector_dim, projector_dim),
-                nn.SiLU(),
-                nn.Linear(projector_dim, z_dim),
-            )
-
 def modulate(x, shift, scale):
     return x * (1 + scale.unsqueeze(1)) + shift.unsqueeze(1)
 
+
 #################################################################################
 #               Embedding Layers for Timesteps and Class Labels                 #
-#################################################################################            
+#################################################################################
+
 class TimestepEmbedder(nn.Module):
     """
     Embeds scalar timesteps into vector representations.
@@ -40,9 +33,9 @@ class TimestepEmbedder(nn.Module):
             nn.Linear(hidden_size, hidden_size, bias=True),
         )
         self.frequency_embedding_size = frequency_embedding_size
-    
+
     @staticmethod
-    def positional_embedding(t, dim, max_period=10000):
+    def timestep_embedding(t, dim, max_period=10000):
         """
         Create sinusoidal timestep embeddings.
         :param t: a 1-D Tensor of N indices, one per batch element.
@@ -63,8 +56,7 @@ class TimestepEmbedder(nn.Module):
         return embedding
 
     def forward(self, t):
-        self.timestep_embedding = self.positional_embedding
-        t_freq = self.timestep_embedding(t, dim=self.frequency_embedding_size).to(t.dtype)
+        t_freq = self.timestep_embedding(t, self.frequency_embedding_size)
         t_emb = self.mlp(t_freq)
         return t_emb
 
@@ -110,29 +102,20 @@ class SiTBlock(nn.Module):
     def __init__(self, hidden_size, num_heads, mlp_ratio=4.0, **block_kwargs):
         super().__init__()
         self.norm1 = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
-        self.attn = Attention(
-            hidden_size, num_heads=num_heads, qkv_bias=True, qk_norm=block_kwargs["qk_norm"]
-            )
-        if "fused_attn" in block_kwargs.keys():
-            self.attn.fused_attn = block_kwargs["fused_attn"]
+        self.attn = Attention(hidden_size, num_heads=num_heads, qkv_bias=True, **block_kwargs)
         self.norm2 = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
         mlp_hidden_dim = int(hidden_size * mlp_ratio)
         approx_gelu = lambda: nn.GELU(approximate="tanh")
-        self.mlp = Mlp(
-            in_features=hidden_size, hidden_features=mlp_hidden_dim, act_layer=approx_gelu, drop=0
-            )
+        self.mlp = Mlp(in_features=hidden_size, hidden_features=mlp_hidden_dim, act_layer=approx_gelu, drop=0)
         self.adaLN_modulation = nn.Sequential(
             nn.SiLU(),
             nn.Linear(hidden_size, 6 * hidden_size, bias=True)
         )
 
     def forward(self, x, c):
-        shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = (
-            self.adaLN_modulation(c).chunk(6, dim=-1)
-        )
+        shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = self.adaLN_modulation(c).chunk(6, dim=1)
         x = x + gate_msa.unsqueeze(1) * self.attn(modulate(self.norm1(x), shift_msa, scale_msa))
         x = x + gate_mlp.unsqueeze(1) * self.mlp(modulate(self.norm2(x), shift_mlp, scale_mlp))
-
         return x
 
 
@@ -150,10 +133,9 @@ class FinalLayer(nn.Module):
         )
 
     def forward(self, x, c):
-        shift, scale = self.adaLN_modulation(c).chunk(2, dim=-1)
+        shift, scale = self.adaLN_modulation(c).chunk(2, dim=1)
         x = modulate(self.norm_final(x), shift, scale)
         x = self.linear(x)
-
         return x
 
 
@@ -163,50 +145,35 @@ class SiT(nn.Module):
     """
     def __init__(
         self,
-        path_type='edm',
         input_size=32,
         patch_size=2,
         in_channels=4,
         hidden_size=1152,
-        decoder_hidden_size=768,
-        encoder_depth=8,
         depth=28,
         num_heads=16,
         mlp_ratio=4.0,
         class_dropout_prob=0.1,
         num_classes=1000,
-        use_cfg=False,
-        z_dims=[768],
-        projector_dim=2048,
-        **block_kwargs # fused_attn
+        learn_sigma=True,
     ):
         super().__init__()
-        self.path_type = path_type
+        self.learn_sigma = learn_sigma
         self.in_channels = in_channels
-        self.out_channels = in_channels
+        self.out_channels = in_channels * 2 if learn_sigma else in_channels
         self.patch_size = patch_size
         self.num_heads = num_heads
-        self.use_cfg = use_cfg
-        self.num_classes = num_classes
-        self.z_dims = z_dims
-        self.encoder_depth = encoder_depth
 
-        self.x_embedder = PatchEmbed(
-            input_size, patch_size, in_channels, hidden_size, bias=True
-            )
-        self.t_embedder = TimestepEmbedder(hidden_size) # timestep embedding type
+        self.x_embedder = PatchEmbed(input_size, patch_size, in_channels, hidden_size, bias=True)
+        self.t_embedder = TimestepEmbedder(hidden_size)
         self.y_embedder = LabelEmbedder(num_classes, hidden_size, class_dropout_prob)
         num_patches = self.x_embedder.num_patches
         # Will use fixed sin-cos embedding:
         self.pos_embed = nn.Parameter(torch.zeros(1, num_patches, hidden_size), requires_grad=False)
 
         self.blocks = nn.ModuleList([
-            SiTBlock(hidden_size, num_heads, mlp_ratio=mlp_ratio, **block_kwargs) for _ in range(depth)
+            SiTBlock(hidden_size, num_heads, mlp_ratio=mlp_ratio) for _ in range(depth)
         ])
-        self.projectors = nn.ModuleList([
-            build_mlp(hidden_size, projector_dim, z_dim) for z_dim in z_dims
-            ])
-        self.final_layer = FinalLayer(decoder_hidden_size, patch_size, self.out_channels)
+        self.final_layer = FinalLayer(hidden_size, patch_size, self.out_channels)
         self.initialize_weights()
 
     def initialize_weights(self):
@@ -219,9 +186,7 @@ class SiT(nn.Module):
         self.apply(_basic_init)
 
         # Initialize (and freeze) pos_embed by sin-cos embedding:
-        pos_embed = get_2d_sincos_pos_embed(
-            self.pos_embed.shape[-1], int(self.x_embedder.num_patches ** 0.5)
-            )
+        pos_embed = get_2d_sincos_pos_embed(self.pos_embed.shape[-1], int(self.x_embedder.num_patches ** 0.5))
         self.pos_embed.data.copy_(torch.from_numpy(pos_embed).float().unsqueeze(0))
 
         # Initialize patch_embed like nn.Linear (instead of nn.Conv2d):
@@ -247,22 +212,22 @@ class SiT(nn.Module):
         nn.init.constant_(self.final_layer.linear.weight, 0)
         nn.init.constant_(self.final_layer.linear.bias, 0)
 
-    def unpatchify(self, x, patch_size=None):
+    def unpatchify(self, x):
         """
         x: (N, T, patch_size**2 * C)
-        imgs: (N, C, H, W)
+        imgs: (N, H, W, C)
         """
         c = self.out_channels
-        p = self.x_embedder.patch_size[0] if patch_size is None else patch_size
+        p = self.x_embedder.patch_size[0]
         h = w = int(x.shape[1] ** 0.5)
         assert h * w == x.shape[1]
 
         x = x.reshape(shape=(x.shape[0], h, w, p, p, c))
         x = torch.einsum('nhwpqc->nchpwq', x)
-        imgs = x.reshape(shape=(x.shape[0], c, h * p, w * p))
+        imgs = x.reshape(shape=(x.shape[0], c, h * p, h * p))
         return imgs
-    
-    def forward(self, x, t, y, return_logvar=False, use_projection=True):
+
+    def forward(self, x, t, y):
         """
         Forward pass of SiT.
         x: (N, C, H, W) tensor of spatial inputs (images or latent representations of images)
@@ -270,44 +235,39 @@ class SiT(nn.Module):
         y: (N,) tensor of class labels
         """
         x = self.x_embedder(x) + self.pos_embed  # (N, T, D), where T = H * W / patch_size ** 2
-        N, T, D = x.shape
-
-        # timestep and class embedding
-        t_embed = self.t_embedder(t)                   # (N, D)
+        t = self.t_embedder(t)                   # (N, D)
         y = self.y_embedder(y, self.training)    # (N, D)
-        c = t_embed + y                                # (N, D)
-
-        for i, block in enumerate(self.blocks):
+        c = t + y                                # (N, D)
+        for block in self.blocks:
             x = block(x, c)                      # (N, T, D)
-            if (i + 1) == self.encoder_depth:
-                # Get the feature before projection
-                fs = [x.clone() for _ in range(len(self.projectors))]
-                zs = [projector(x.reshape(-1, D)).reshape(N, T, -1) for projector in self.projectors]
         x = self.final_layer(x, c)                # (N, T, patch_size ** 2 * out_channels)
         x = self.unpatchify(x)                   # (N, out_channels, H, W)
+        if self.learn_sigma:
+            x, _ = x.chunk(2, dim=1)
+        return x
 
-        return x, zs, fs
+    def forward_with_cfg(self, x, t, y, cfg_scale):
+        """
+        Forward pass of SiT, but also batches the unconSiTional forward pass for classifier-free guidance.
+        """
+        # https://github.com/openai/glide-text2im/blob/main/notebooks/text2im.ipynb
+        half = x[: len(x) // 2]
+        combined = torch.cat([half, half], dim=0)
+        model_out = self.forward(combined, t, y)
+        # For exact reproducibility reasons, we apply classifier-free guidance on only
+        # three channels by default. The standard approach to cfg applies it to all channels.
+        # This can be done by uncommenting the following line and commenting-out the line following that.
+        # eps, rest = model_out[:, :self.in_channels], model_out[:, self.in_channels:]
+        eps, rest = model_out[:, :3], model_out[:, 3:]
+        cond_eps, uncond_eps = torch.split(eps, len(eps) // 2, dim=0)
+        half_eps = uncond_eps + cfg_scale * (cond_eps - uncond_eps)
+        eps = torch.cat([half_eps, half_eps], dim=0)
+        return torch.cat([eps, rest], dim=1)
 
     def forward_features(self, x, t, y):
-        x = self.x_embedder(x) + self.pos_embed  # (N, T, D), where T = H * W / patch_size ** 2
-        N, T, D = x.shape
-
-        # timestep and class embedding
-        t_embed = self.t_embedder(t)                   # (N, D)
-        y = self.y_embedder(y, self.training)    # (N, D)
-        c = t_embed + y                                # (N, D)
-
-        zs = []
-        for i, block in enumerate(self.blocks):
-            x = block(x, c)                      # (N, T, D)
-            zs.append(x.detach().cpu())
-        x = self.final_layer(x, c)                # (N, T, patch_size ** 2 * out_channels)
-        x = self.unpatchify(x)                   # (N, out_channels, H, W)
-
-        # Reformat zs into a tensor of [B, L, T, D], L is the layer index, currently is a list of [B, T, D]
-        zs = torch.stack(zs, dim=1)
-
-        return x, zs
+        # To obtain the features, we are not using CFG
+        # FIXME: Implement this method
+        pass
 
 
 #################################################################################
@@ -370,31 +330,31 @@ def get_1d_sincos_pos_embed_from_grid(embed_dim, pos):
 #################################################################################
 
 def SiT_XL_2(**kwargs):
-    return SiT(depth=28, hidden_size=1152, decoder_hidden_size=1152, patch_size=2, num_heads=16, **kwargs)
+    return SiT(depth=28, hidden_size=1152, patch_size=2, num_heads=16, **kwargs)
 
 def SiT_XL_4(**kwargs):
-    return SiT(depth=28, hidden_size=1152, decoder_hidden_size=1152, patch_size=4, num_heads=16, **kwargs)
+    return SiT(depth=28, hidden_size=1152, patch_size=4, num_heads=16, **kwargs)
 
 def SiT_XL_8(**kwargs):
-    return SiT(depth=28, hidden_size=1152, decoder_hidden_size=1152, patch_size=8, num_heads=16, **kwargs)
+    return SiT(depth=28, hidden_size=1152, patch_size=8, num_heads=16, **kwargs)
 
 def SiT_L_2(**kwargs):
-    return SiT(depth=24, hidden_size=1024, decoder_hidden_size=1024, patch_size=2, num_heads=16, **kwargs)
+    return SiT(depth=24, hidden_size=1024, patch_size=2, num_heads=16, **kwargs)
 
 def SiT_L_4(**kwargs):
-    return SiT(depth=24, hidden_size=1024, decoder_hidden_size=1024, patch_size=4, num_heads=16, **kwargs)
+    return SiT(depth=24, hidden_size=1024, patch_size=4, num_heads=16, **kwargs)
 
 def SiT_L_8(**kwargs):
-    return SiT(depth=24, hidden_size=1024, decoder_hidden_size=1024, patch_size=8, num_heads=16, **kwargs)
+    return SiT(depth=24, hidden_size=1024, patch_size=8, num_heads=16, **kwargs)
 
 def SiT_B_2(**kwargs):
-    return SiT(depth=12, hidden_size=768, decoder_hidden_size=768, patch_size=2, num_heads=12, **kwargs)
+    return SiT(depth=12, hidden_size=768, patch_size=2, num_heads=12, **kwargs)
 
 def SiT_B_4(**kwargs):
-    return SiT(depth=12, hidden_size=768, decoder_hidden_size=768, patch_size=4, num_heads=12, **kwargs)
+    return SiT(depth=12, hidden_size=768, patch_size=4, num_heads=12, **kwargs)
 
 def SiT_B_8(**kwargs):
-    return SiT(depth=12, hidden_size=768, decoder_hidden_size=768, patch_size=8, num_heads=12, **kwargs)
+    return SiT(depth=12, hidden_size=768, patch_size=8, num_heads=12, **kwargs)
 
 def SiT_S_2(**kwargs):
     return SiT(depth=12, hidden_size=384, patch_size=2, num_heads=6, **kwargs)
@@ -412,4 +372,3 @@ SiT_models = {
     'SiT-B/2':  SiT_B_2,   'SiT-B/4':  SiT_B_4,   'SiT-B/8':  SiT_B_8,
     'SiT-S/2':  SiT_S_2,   'SiT-S/4':  SiT_S_4,   'SiT-S/8':  SiT_S_8,
 }
-

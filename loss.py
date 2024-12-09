@@ -24,7 +24,8 @@ class SILoss:
             accelerator=None, 
             latents_scale=None, 
             latents_bias=None,
-            ):
+            loss_type="cos_sim",
+        ):
         self.prediction = prediction
         self.weighting = weighting
         self.path_type = path_type
@@ -32,6 +33,7 @@ class SILoss:
         self.accelerator = accelerator
         self.latents_scale = latents_scale
         self.latents_bias = latents_bias
+        self.loss_type = loss_type
 
     def interpolant(self, t):
         if self.path_type == "linear":
@@ -77,19 +79,44 @@ class SILoss:
             model_target = d_alpha_t * images + d_sigma_t * noises
         else:
             raise NotImplementedError() # TODO: add x or eps prediction
-        # use diffusion model to predict the noise and also extract the latents (at intermediate transformer block)
-        model_output, zs_tilde  = model(model_input, time_input.flatten(), **model_kwargs)
-        denoising_loss = mean_flat((model_output - model_target) ** 2) # standard diffusion loss
 
-        # projection loss (for REPA)
-        proj_loss = 0.
+        # Noise prediction, features after projection, features before projection
+        model_output, zs_tilde, fs_tilde  = model(model_input, time_input.flatten(), **model_kwargs)
+        denoising_loss = mean_flat((model_output - model_target) ** 2)
+
+        # projection and kernel alignment loss
+        proj_loss, ka_loss = 0., 0.
+
         bsz = zs[0].shape[0]
-        for i, (z, z_tilde) in enumerate(zip(zs, zs_tilde)):
-            for j, (z_j, z_tilde_j) in enumerate(zip(z, z_tilde)):
-                # normalize the latents
-                z_tilde_j = torch.nn.functional.normalize(z_tilde_j, dim=-1) 
-                z_j = torch.nn.functional.normalize(z_j, dim=-1) 
-                proj_loss += mean_flat(-(z_j * z_tilde_j).sum(dim=-1))
-        proj_loss /= (len(zs) * bsz)
+        if "cos_sim" in self.loss_type:
+            # Avoid the average is taken for previously computed losses, use another variable to store the current loss
+            curr_proj_loss = 0.
+            for i, (z, z_tilde) in enumerate(zip(zs, zs_tilde)):
+                for j, (z_j, z_tilde_j) in enumerate(zip(z, z_tilde)):
+                    z_tilde_j = torch.nn.functional.normalize(z_tilde_j, dim=-1) 
+                    z_j = torch.nn.functional.normalize(z_j, dim=-1) 
+                    curr_proj_loss += mean_flat(-(z_j * z_tilde_j).sum(dim=-1))
+            curr_proj_loss /= (len(zs) * bsz)
+            proj_loss += curr_proj_loss
 
-        return denoising_loss, proj_loss
+        # Kernel Alignment across patches
+        if "ka_patch" in self.loss_type:
+            # Avoid the average is taken for previously computed losses, use another variable to store the current loss
+            curr_ka_loss = 0.
+            for i, (z, f_tilde) in enumerate(zip(zs, fs_tilde)):
+                # Compute the semantic relation activation matrices A -> (B x L x L), normalize the representation row-wise with L2 norm
+                # The shape of the kernel matrix should be [L x L] for each data in the batch.
+                a_mat = F.normalize(z @ z.transpose(1, 2), dim=-1)
+                a_tilde_mat = F.normalize(f_tilde @ f_tilde.transpose(1, 2), dim=-1)
+                # Compute the element-wise loss
+                curr_ka_loss += torch.sqrt(F.mse_loss(a_mat, a_tilde_mat, reduction='mean'))
+            curr_ka_loss /= len(zs)
+            ka_loss += curr_ka_loss
+
+        if "ka_sample" in self.loss_type:
+            raise NotImplementedError("The sample-wise projection loss is not implemented yet.")
+
+        if "ka_channel" in self.loss_type:
+            raise NotImplementedError("The channel-wise projection loss is not implemented yet.")
+
+        return denoising_loss, proj_loss, ka_loss

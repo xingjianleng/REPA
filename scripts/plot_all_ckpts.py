@@ -10,10 +10,15 @@ import matplotlib.pyplot as plt
 EXPS = {
     "sit-b-base-400k-SiT-B-2-": "sit-b-base-400k",
     "sit-b-linear-dinov2-b-enc8-400k-SiT-B-2-": "sit-b-linear-dinov2-b-enc8-400k",
-    "sit-l-base-400k-SiT-L-2-": "sit-l-base-400k",
-    "sit-l-linear-dinov2-l-enc8-400k-SiT-L-2-": "sit-l-linear-dinov2-l-enc8-400k",
-    "sit-xl-base-400k-SiT-XL-2-": "sit-xl-base-400k",
-    "sit-xl-linear-dinov2-b-enc8-400k-SiT-XL-2-": "sit-xl-linear-dinov2-b-enc8-400k",
+    # "sit-l-base-400k-SiT-L-2-": "sit-l-base-400k",
+    # "sit-l-linear-dinov2-l-enc8-400k-SiT-L-2-": "sit-l-linear-dinov2-l-enc8-400k",
+    # "sit-xl-base-400k-SiT-XL-2-": "sit-xl-base-400k",
+    # "sit-xl-linear-dinov2-b-enc8-400k-SiT-XL-2-": "sit-xl-linear-dinov2-b-enc8-400k",
+    "sit-b-linear-dinov2-b-enc8-patch-0.5-400k-SiT-B-2-": "sit-b-linear-dinov2-b-enc8-patch-0.5-400k",
+    "sit-b-linear-dinov2-b-enc8-patch-0.75-400k-SiT-B-2-": "sit-b-linear-dinov2-b-enc8-patch-0.75-400k",
+    "sit-b-linear-dinov2-b-enc8-repa-patch-0.5-400k-SiT-B-2-": "sit-b-linear-dinov2-b-enc8-repa-patch-0.5-400k",
+    "sit-b-linear-dinov2-b-enc8-repa-patch-0.75-400k-SiT-B-2-": "sit-b-linear-dinov2-b-enc8-repa-patch-0.75-400k",
+    "sit-b-linear-dinov2-b-enc8-repa-patch-1.0-400k-SiT-B-2-": "sit-b-linear-dinov2-b-enc8-repa-patch-1.0-400k",
 }
 
 
