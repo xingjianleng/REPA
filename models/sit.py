@@ -282,7 +282,10 @@ class SiT(nn.Module):
             if (i + 1) == self.encoder_depth:
                 # Get the feature before projection
                 fs = [x.clone() for _ in range(len(self.projectors))]
-                zs = [projector(x.reshape(-1, D)).reshape(N, T, -1) for projector in self.projectors]
+                if use_projection:
+                    zs = [projector(x.reshape(-1, D)).reshape(N, T, -1) for projector in self.projectors]
+                else:
+                    zs = [x.clone() for _ in range(len(self.projectors))]
         x = self.final_layer(x, c)                # (N, T, patch_size ** 2 * out_channels)
         x = self.unpatchify(x)                   # (N, out_channels, H, W)
 
