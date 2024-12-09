@@ -56,6 +56,7 @@ class SILoss:
             model_kwargs = {}
         # sample timesteps
         if self.weighting == "uniform":
+            # randomly sample the timestep for reverse diffusion loss
             time_input = torch.rand((images.shape[0], 1, 1, 1))
         elif self.weighting == "lognormal":
             # sample timestep according to log-normal distribution of sigmas following EDM
@@ -65,18 +66,20 @@ class SILoss:
                 time_input = sigma / (1 + sigma)
             elif self.path_type == "cosine":
                 time_input = 2 / np.pi * torch.atan(sigma)
-                
+
+        # timestep for the reverse diffusion loss
         time_input = time_input.to(device=images.device, dtype=images.dtype)
-        
+        # random initial noise
         noises = torch.randn_like(images)
+
+        # forward diffusion
         alpha_t, sigma_t, d_alpha_t, d_sigma_t = self.interpolant(time_input)
-            
         model_input = alpha_t * images + sigma_t * noises
         if self.prediction == 'v':
             model_target = d_alpha_t * images + d_sigma_t * noises
         else:
             raise NotImplementedError() # TODO: add x or eps prediction
-        
+
         # Noise prediction, features after projection, features before projection
         model_output, zs_tilde, fs_tilde  = model(model_input, time_input.flatten(), **model_kwargs)
         denoising_loss = mean_flat((model_output - model_target) ** 2)

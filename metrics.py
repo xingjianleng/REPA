@@ -7,6 +7,8 @@ import torchaudio.functional as TAF
 import numpy as np
 from sklearn.cross_decomposition import CCA
 
+import torch.nn.functional as F
+
 try:
     import pymp
     pymp_available = True
@@ -26,6 +28,8 @@ class AlignmentMetrics:
         "cknna",
         "svcca",
         "edit_distance_knn",
+        "patch2patch_kernel_alignment_score",
+        "sample2sample_kernel_alignment_score",
     ]
 
     @staticmethod
@@ -179,6 +183,66 @@ class AlignmentMetrics:
         return 1 - torch.mean(edit_distance) / topk
     
     
+    @staticmethod
+    def sample2sample_kernel_alignment_score(feats_A, feats_B):
+        """
+        feats_A: B, N, D
+        feats_B: B, N, E
+        """
+        # take the mean across last dimension # B, D
+        feats_A = feats_A.mean(dim=-2)
+        feats_B = feats_B.mean(dim=-2)
+
+        # normalize the features along the last dimension
+        feats_A = F.normalize(feats_A, dim=-1)
+        feats_B = F.normalize(feats_B, dim=-1)
+
+        # compute the kernel matrix --> sample2sample similarity matrix for both A and B # B, B
+        kernel_matrix_A = feats_A @ feats_A.transpose(0, 1)
+        kernel_matrix_B = feats_B @ feats_B.transpose(0, 1)
+
+        # normalize the rows for both kernel matrices
+        kernel_matrix_A = F.normalize(kernel_matrix_A, dim=-1)
+        kernel_matrix_B = F.normalize(kernel_matrix_B, dim=-1)
+
+        # compute the similarity of the kernel matrices between A and B
+        # Since each row is now a unit vector, the dot product of corresponding rows
+        # will be 1 if they are identical.
+        alignment_score = (kernel_matrix_A * kernel_matrix_B).sum(dim=-1)  # B
+
+        # average the alignment score across the samples
+        alignment_score = alignment_score.mean(dim=0)
+        return alignment_score.item()
+
+
+    @staticmethod
+    def patch2patch_kernel_alignment_score(feats_A, feats_B):
+        """
+        feats_A: B, N, D
+        feats_B: B, N, E # can be different from dimension
+        """
+        # normalize the features along the last dimension
+        feats_A = F.normalize(feats_A, dim=-1)
+        feats_B = F.normalize(feats_B, dim=-1)
+
+        # compute the kernel matrix --> patch2patch similarity matrix for both A and B # B, N, N
+        kernel_matrix_A = feats_A @ feats_A.transpose(1, 2)
+        kernel_matrix_B = feats_B @ feats_B.transpose(1, 2)
+
+        # normalize the rows for both kernel matrices
+        kernel_matrix_A = F.normalize(kernel_matrix_A, dim=-1)
+        kernel_matrix_B = F.normalize(kernel_matrix_B, dim=-1)
+
+        # compute the similarity of the kernel matrices between A and B
+        # Since each row is now a unit vector, the dot product of corresponding rows
+        # will be 1 if they are identical.
+        alignment_score = (kernel_matrix_A * kernel_matrix_B).sum(dim=-1)  # B, N
+
+        # average the alignment score across the patches (dim=1) and then across the samples (dim=0)
+        alignment_score = alignment_score.mean(dim=1).mean(dim=0)
+        return alignment_score.item()
+        
+
     @staticmethod
     def cknna(feats_A, feats_B, topk=None, distance_agnostic=False, unbiased=True):
         """ similarity only cka variant """
