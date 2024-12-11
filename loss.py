@@ -131,7 +131,8 @@ class SILoss:
         if self.loss_type == "patch2patch":
             # NOTE: We should compute kernel alignment with unprojected features only
             for i, (z, f_tilde) in enumerate(zip(zs, fs_tilde)):
-                kernel_alignment_loss += self.patch2patch_kernel_alignment_score(z, f_tilde)
+                # NOTE: The loss should be the negative of the alignment score (minimize the negative alignment score)
+                kernel_alignment_loss += -self.patch2patch_kernel_alignment_score(z, f_tilde)
             kernel_alignment_loss /= len(zs)
 
         elif self.loss_type is not None:

@@ -348,12 +348,12 @@ def main(args):
                     "epoch": global_step / len(train_dataloader),
                     "loss": accelerator.gather(loss_mean).mean().detach().item(), 
                     "proj_loss": accelerator.gather(proj_loss_mean).mean().detach().item(),
-                    "ka_loss": accelerator.gather(ka_loss_mean).mean().detach().item(),
+                    "kernel_alignment_loss": accelerator.gather(ka_loss_mean).mean().detach().item(),
                     "grad_norm": accelerator.gather(grad_norm).mean().detach().item()
                 }
                 # log the cknna score to keep track of the alignment
                 if cknna_score is not None:
-                    logs["cknna_score"] = accelerator.gather(cknna_score).mean().detach().item(),
+                    logs["cknna_score"] = accelerator.gather(cknna_score).mean().detach().item()
                 progress_bar.set_postfix(**logs)
                 accelerator.log(logs, step=global_step)
             if global_step % args.checkpointing_steps == 0 and global_step > 0:
