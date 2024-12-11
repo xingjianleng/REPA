@@ -111,7 +111,8 @@ class SILoss:
             raise NotImplementedError() # TODO: add x or eps prediction
 
         # Noise prediction, features after projection, features before projection
-        model_output, zs_tilde, fs_tilde = model(model_input, time_input.flatten(), **model_kwargs)
+        model_output, zs_tilde, fs_tilde, all_layer_feats = model(model_input, time_input.flatten(), use_projection=True,
+                                                                  return_all_layers=compute_cknna, **model_kwargs)
         denoising_loss = mean_flat((model_output - model_target) ** 2)
 
         # projection and kernel alignment loss
@@ -140,19 +141,25 @@ class SILoss:
 
         cknna_alignment_score = None
         if compute_cknna:
-            cknna_alignment_score = 0.
+            cknna_alignment_scores = []
             # NOTE: We should compute CKNNA with unprojected features only
-            for z, f_tilde in zip(zs, fs_tilde):
-                # NOTE: For the CKNNA score, we take the mean across patches, to get a single feature vector for each sample
-                curr_cknna_score = AlignmentMetrics.cknna(
-                    feats_A=z.mean(dim=1),
-                    feats_B=f_tilde.mean(dim=1),
-                    topk=cknna_topk,
-                )
-                # NOTE: We cast the cknna_alignment_score to a tensor for compatibility with all_gather across GPUs
-                curr_cknna_score_tensor = torch.tensor(curr_cknna_score, device=z.device)
-                cknna_alignment_score += curr_cknna_score_tensor
+            for all_layer_feat in all_layer_feats:
+                curr_cknna_alignment_score = 0.
+                for z, f_tilde in zip(zs, all_layer_feat):
+                    # NOTE: For the CKNNA score, we take the mean across patches, to get a single feature vector for each sample
+                    curr_cknna_score = AlignmentMetrics.cknna(
+                        feats_A=z.mean(dim=1),
+                        feats_B=f_tilde.mean(dim=1),
+                        topk=cknna_topk,
+                    )
+                    curr_cknna_alignment_score += curr_cknna_score
 
-            cknna_alignment_score /= len(zs)
+                curr_cknna_alignment_score /= len(zs)
+                cknna_alignment_scores.append(curr_cknna_alignment_score)
+
+            # Choose the maximum CKNNA alignment score across all layers
+            cknna_alignment_score = max(cknna_alignment_scores)
+            # NOTE: We cast the cknna_alignment_score to a tensor for compatibility with all_gather across GPUs
+            cknna_alignment_score = torch.tensor(cknna_alignment_score, device=z.device)
 
         return denoising_loss, proj_loss, kernel_alignment_loss, cknna_alignment_score
