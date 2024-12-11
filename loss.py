@@ -143,11 +143,15 @@ class SILoss:
             # NOTE: We should compute CKNNA with unprojected features only
             for z, f_tilde in zip(zs, fs_tilde):
                 # NOTE: For the CKNNA score, we take the mean across patches, to get a single feature vector for each sample
-                cknna_alignment_score = AlignmentMetrics.cknna(
+                curr_cknna_score = AlignmentMetrics.cknna(
                     feats_A=z.mean(dim=1),
                     feats_B=f_tilde.mean(dim=1),
                     topk=cknna_topk,
                 )
+                # NOTE: We cast the cknna_alignment_score to a tensor for compatibility with all_gather across GPUs
+                curr_cknna_score_tensor = torch.tensor(curr_cknna_score, device=z.device)
+                cknna_alignment_score += curr_cknna_score_tensor
+
             cknna_alignment_score /= len(zs)
 
         return denoising_loss, proj_loss, kernel_alignment_loss, cknna_alignment_score
