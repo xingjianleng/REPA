@@ -175,6 +175,7 @@ class SiT(nn.Module):
         ])
         self.final_layer = FinalLayer(hidden_size, patch_size, self.out_channels)
         self.initialize_weights()
+        self.encoder_depth = -1
 
     def initialize_weights(self):
         # Initialize transformer layers:
@@ -227,24 +228,30 @@ class SiT(nn.Module):
         imgs = x.reshape(shape=(x.shape[0], c, h * p, h * p))
         return imgs
 
-    def forward(self, x, t, y):
+    def forward(self, x, t, y, use_projection=False):
         """
         Forward pass of SiT.
         x: (N, C, H, W) tensor of spatial inputs (images or latent representations of images)
         t: (N,) tensor of diffusion timesteps
         y: (N,) tensor of class labels
+        use_projection: not effective, just to keep the method signature
         """
         x = self.x_embedder(x) + self.pos_embed  # (N, T, D), where T = H * W / patch_size ** 2
         t = self.t_embedder(t)                   # (N, D)
         y = self.y_embedder(y, self.training)    # (N, D)
         c = t + y                                # (N, D)
-        for block in self.blocks:
+        zs = []
+
+        for i, block in enumerate(self.blocks):
             x = block(x, c)                      # (N, T, D)
+            # Return the diffusion feature at t
+            if self.encoder_depth > 0 and (i + 1) == self.encoder_depth:
+                zs = [x.clone()]
         x = self.final_layer(x, c)                # (N, T, patch_size ** 2 * out_channels)
         x = self.unpatchify(x)                   # (N, out_channels, H, W)
         if self.learn_sigma:
             x, _ = x.chunk(2, dim=1)
-        return x
+        return x, zs
 
     def forward_with_cfg(self, x, t, y, cfg_scale):
         """
@@ -263,11 +270,6 @@ class SiT(nn.Module):
         half_eps = uncond_eps + cfg_scale * (cond_eps - uncond_eps)
         eps = torch.cat([half_eps, half_eps], dim=0)
         return torch.cat([eps, rest], dim=1)
-
-    def forward_features(self, x, t, y):
-        # To obtain the features, we are not using CFG
-        # FIXME: Implement this method
-        pass
 
 
 #################################################################################

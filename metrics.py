@@ -30,6 +30,8 @@ class AlignmentMetrics:
         "edit_distance_knn",
         "patch2patch_kernel_alignment_score",
         "sample2sample_kernel_alignment_score",
+        "patch2patch_kernel_alignment_score_kl_div",
+        "sample2sample_kernel_alignment_score_kl_div",
     ]
 
     @staticmethod
@@ -214,6 +216,65 @@ class AlignmentMetrics:
         alignment_score = alignment_score.mean(dim=0)
         return alignment_score.item()
 
+    @staticmethod
+    def sample2sample_kernel_alignment_score_kl_div(feats_A, feats_B):
+        """
+        Another variant of sample2sample kernel alignment score as above, but we treat each line as logits,
+        and apply softmax, then compute the row-wise KL divergence as the similarity measure.
+        feats_A: B, N, D
+        feats_B: B, N, E
+        """
+        # take the mean across the N dimension # B, D
+        feats_A = feats_A.mean(dim=-2)
+        feats_B = feats_B.mean(dim=-2)
+
+        # normalize the features along the last dimension
+        feats_A = F.normalize(feats_A, dim=-1)
+        feats_B = F.normalize(feats_B, dim=-1)
+
+        # compute the kernel matrix --> sample2sample similarity matrix for both A and B # B, B
+        kernel_matrix_A = feats_A @ feats_A.transpose(0, 1)
+        kernel_matrix_B = feats_B @ feats_B.transpose(0, 1)
+
+        # treat each row in the kernel matrix as logits and apply softmax
+        kernel_matrix_A = F.softmax(kernel_matrix_A, dim=-1)
+        kernel_matrix_B = F.softmax(kernel_matrix_B, dim=-1)
+
+        # compute the similarity of the kernel matrices between A and B
+        # Since each row is now a distribution, we can compute the KL divergence
+        alignment_score = -F.kl_div(kernel_matrix_A.log(), kernel_matrix_B, reduction='batchmean')  # []
+
+        return alignment_score.item()
+
+    @staticmethod
+    def sample2sample_kernel_alignment_score_jsd(feats_A, feats_B):
+        """
+        Another variant of sample2sample kernel alignment score as above, but we treat each line as logits, then use softmax
+        and use Jensen-Shannon Divergence as the similarity measure.
+        """
+        # take the mean across the N dimension # B, D
+        feats_A = feats_A.mean(dim=-2)
+        feats_B = feats_B.mean(dim=-2)
+
+        # normalize the features along the last dimension
+        feats_A = F.normalize(feats_A, dim=-1)
+        feats_B = F.normalize(feats_B, dim=-1)
+
+        # compute the kernel matrix --> sample2sample similarity matrix for both A and B # B, B
+        kernel_matrix_A = feats_A @ feats_A.transpose(0, 1)
+        kernel_matrix_B = feats_B @ feats_B.transpose(0, 1)
+
+        # treat each row in the kernel matrix as logits and apply softmax
+        kernel_matrix_A = F.softmax(kernel_matrix_A, dim=-1)
+        kernel_matrix_B = F.softmax(kernel_matrix_B, dim=-1)
+
+        # compute the mixed distribution and then compute the JSD
+        M = 0.5 * (kernel_matrix_A + kernel_matrix_B)
+        kl_div_A_M = F.kl_div(kernel_matrix_A.log(), M, reduction='batchmean')  # []
+        kl_div_B_M = F.kl_div(kernel_matrix_B.log(), M, reduction='batchmean')  # []
+        jsd = 0.5 * (kl_div_A_M + kl_div_B_M)
+        alignment_score = -jsd
+        return alignment_score.item()
 
     @staticmethod
     def patch2patch_kernel_alignment_score(feats_A, feats_B):
@@ -241,7 +302,61 @@ class AlignmentMetrics:
         # average the alignment score across the patches (dim=1) and then across the samples (dim=0)
         alignment_score = alignment_score.mean(dim=1).mean(dim=0)
         return alignment_score.item()
+
+    @staticmethod
+    def patch2patch_kernel_alignment_score_kl_div(feats_A, feats_B):
+        """
+        Another variant of patch2patch kernel alignment score as above, but we treat each line as logits,
+        and apply softmax, then compute the row-wise KL divergence as the similarity measure.
+        feats_A: B, N, D
+        feats_B: B, N, E # can be different from dimension
+        """
+        # normalize the features along the last dimension
+        feats_A = F.normalize(feats_A, dim=-1)
+        feats_B = F.normalize(feats_B, dim=-1)                        
+
+        # compute the kernel matrix --> patch2patch similarity matrix for both A and B # B, N, N
+        kernel_matrix_A = feats_A @ feats_A.transpose(1, 2)                                             
+        kernel_matrix_B = feats_B @ feats_B.transpose(1, 2)
+ 
+        # treat each row in the kernel matrix as logits and apply softmax                                                                
+        kernel_matrix_A = F.softmax(kernel_matrix_A, dim=-1)                               
+        kernel_matrix_B = F.softmax(kernel_matrix_B, dim=-1)
+
+        # compute the similarity of the kernel matrices between A and B
+        # Since each row is now a distribution, we can compute the KL divergence
+        N = kernel_matrix_A.shape[-1]
+        alignment_score = -F.kl_div(kernel_matrix_A.view(-1, N).log(), kernel_matrix_B.view(-1, N), reduction='batchmean')  # []
         
+        return alignment_score.item()
+
+    @staticmethod
+    def patch2patch_kernel_alignment_score_jsd(feats_A, feats_B):
+        """
+        Another variant of patch2patch kernel alignment score as above, but we treat each line as logits, then use softmax
+        and use Jensen-Shannon Divergence as the similarity measure.
+        feats_A: B, N, D
+        feats_B: B, N, E # can be different from dimension
+        """
+        feats_A = F.normalize(feats_A, dim=-1)
+        feats_B = F.normalize(feats_B, dim=-1)
+
+        # compute the kernel matrix --> patch2patch similarity matrix for both A and B # B, N, N
+        kernel_matrix_A = feats_A @ feats_A.transpose(1, 2)
+        kernel_matrix_B = feats_B @ feats_B.transpose(1, 2)
+
+        # treat each row in the kernel matrix as logits and apply softmax
+        kernel_matrix_A = F.softmax(kernel_matrix_A, dim=-1)
+        kernel_matrix_B = F.softmax(kernel_matrix_B, dim=-1)
+
+        # compute the mixed distribution and then compute the JSD
+        M = 0.5 * (kernel_matrix_A + kernel_matrix_B)
+        N = kernel_matrix_A.shape[-1]
+        kl_div_A_M = F.kl_div(kernel_matrix_A.view(-1, N).log(), M.view(-1, N), reduction='batchmean')  # []
+        kl_div_B_M = F.kl_div(kernel_matrix_B.view(-1, N).log(), M.view(-1, N), reduction='batchmean')  # []
+        jsd = 0.5 * (kl_div_A_M + kl_div_B_M)
+        alignment_score = -jsd
+        return -alignment_score.item()
 
     @staticmethod
     def cknna(feats_A, feats_B, topk=None, distance_agnostic=False, unbiased=True):

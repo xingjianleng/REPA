@@ -318,7 +318,9 @@ def main(args):
 
             with accelerator.accumulate(model):
                 model_kwargs = dict(y=labels)
-                loss, proj_loss, ka_loss = loss_fn(model, x, model_kwargs, zs=zs)
+                compute_cknna = global_step % args.log_cknna_steps == 0
+                loss, proj_loss, ka_loss, cknna_score = loss_fn(model, x, model_kwargs, zs=zs,
+                                                                compute_cknna=compute_cknna, cknna_topk=args.cknna_topk)
                 loss_mean = loss.mean()
                 proj_loss_mean = proj_loss.mean()
                 ka_loss_mean = ka_loss.mean()
@@ -340,12 +342,18 @@ def main(args):
                 progress_bar.update(1)
                 global_step += 1
                 # log only when global_step really increments
+                # NOTE: 1. _mean is for all encoders, 2. mean() is for gathering across processes
                 logs = {
+                    "global_step": global_step,
+                    "epoch": global_step / len(train_dataloader),
                     "loss": accelerator.gather(loss_mean).mean().detach().item(), 
                     "proj_loss": accelerator.gather(proj_loss_mean).mean().detach().item(),
-                    "ka_loss": accelerator.gather(ka_loss_mean).mean().detach().item(),
+                    "kernel_alignment_loss": accelerator.gather(ka_loss_mean).mean().detach().item(),
                     "grad_norm": accelerator.gather(grad_norm).mean().detach().item()
                 }
+                # log the cknna score to keep track of the alignment
+                if cknna_score is not None:
+                    logs["cknna_score"] = accelerator.gather(cknna_score).mean().detach().item()
                 progress_bar.set_postfix(**logs)
                 accelerator.log(logs, step=global_step)
             if global_step % args.checkpointing_steps == 0 and global_step > 0:
@@ -429,6 +437,8 @@ def parse_args(input_args=None):
     parser.add_argument("--epochs", type=int, default=1400)
     parser.add_argument("--max-train-steps", type=int, default=400000)
     parser.add_argument("--checkpointing-steps", type=int, default=40000)
+    parser.add_argument("--log-cknna-steps", type=int, default=500)
+    parser.add_argument("--cknna-topk", type=int, default=10)
     parser.add_argument("--gradient-accumulation-steps", type=int, default=1)
     parser.add_argument("--learning-rate", type=float, default=1e-4)
     parser.add_argument("--adam-beta1", type=float, default=0.9, help="The beta1 parameter for the Adam optimizer.")
@@ -445,13 +455,12 @@ def parse_args(input_args=None):
 
     # loss
     parser.add_argument("--path-type", type=str, default="linear", choices=["linear", "cosine"])
-    parser.add_argument("--loss-type", type=str, default="cos_sim",
-                        choices=["cos_sim", "ka_patch", "cos_sim+ka_patch", "ka_sample", "ka_channel"])
+    parser.add_argument("--loss-type", type=str, default=None, choices=["patch2patch"])
     parser.add_argument("--prediction", type=str, default="v", choices=["v"]) # currently we only support v-prediction
     parser.add_argument("--cfg-prob", type=float, default=0.1)
     parser.add_argument("--enc-type", type=str, default='dinov2-vit-b')
     parser.add_argument("--proj-coeff", type=float, default=0.5)
-    parser.add_argument("--ka-coeff", type=float, default=0.75)
+    parser.add_argument("--ka-coeff", type=float, default=0.5)
     parser.add_argument("--weighting", default="uniform", type=str, help="Max gradient norm.")
     parser.add_argument("--legacy", action=argparse.BooleanOptionalAction, default=False)
 
