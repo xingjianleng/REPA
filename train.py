@@ -261,10 +261,10 @@ def main(args):
     if accelerator.is_main_process:
         tracker_config = vars(copy.deepcopy(args))
         accelerator.init_trackers(
-            project_name="REPA", 
+            project_name="grepa", 
             config=tracker_config,
             init_kwargs={
-                "wandb": {"name": f"{args.exp_name}"}
+                "wandb": {"name": f"{args.exp_name}", "project": "grepa"},
             },
         )
         
