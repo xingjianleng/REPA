@@ -219,12 +219,14 @@ class AlignmentMetrics:
         return alignment_score.item()
 
     @staticmethod
-    def sample2sample_kernel_alignment_score_kl_div(feats_A, feats_B):
+    def sample2sample_kernel_alignment_score_kl_div(feats_A, feats_B, temperature=1.0):
         """
         Another variant of sample2sample kernel alignment score as above, but we treat each line as logits,
         and apply softmax, then compute the row-wise KL divergence as the similarity measure.
         feats_A: B, N, D
         feats_B: B, N, E
+        temperature: float, temperature for softmax
+        NOTE: This only computes KL(A || B) not the other way around. Use with caution.
         """
         # take the mean across the N dimension # B, D
         feats_A = feats_A.mean(dim=-2)
@@ -239,13 +241,19 @@ class AlignmentMetrics:
         kernel_matrix_B = feats_B @ feats_B.transpose(0, 1)
 
         # treat each row in the kernel matrix as logits and apply softmax
-        kernel_matrix_A = F.softmax(kernel_matrix_A, dim=-1)
-        kernel_matrix_B = F.softmax(kernel_matrix_B, dim=-1)
+        P = F.softmax(kernel_matrix_A / temperature, dim=-1)
+        Q = F.softmax(kernel_matrix_B / temperature, dim=-1)
 
-        # compute the similarity of the kernel matrices between A and B
-        # Since each row is now a distribution, we can compute the KL divergence
-        alignment_score = -F.kl_div(kernel_matrix_A.log(), kernel_matrix_B, reduction='batchmean')  # []
+        eps = 1e-10
+        P_clamped = torch.clamp(P, min=eps)
+        Q_clamped = torch.clamp(Q, min=eps)
 
+        # KL(P||M) = sum P * log(P/M) over the last dimension (B)
+        # NOTE: This only computes KL(A || B) not the other way around. Use with caution.
+        KL_PQ = torch.sum(P_clamped * (torch.log(P_clamped) - torch.log(Q_clamped)), dim=-1)  # B
+
+        # NOTE: The alignment score range is [-inf, 0], not [0, 1]. Use with caution.
+        alignment_score = -KL_PQ.mean()
         return alignment_score.item()
 
     @staticmethod
@@ -343,12 +351,13 @@ class AlignmentMetrics:
         return alignment_score.item()
 
     @staticmethod
-    def patch2patch_kernel_alignment_score_kl_div(feats_A, feats_B):
+    def patch2patch_kernel_alignment_score_kl_div(feats_A, feats_B, temperature=1.0):
         """
         Another variant of patch2patch kernel alignment score as above, but we treat each line as logits,
         and apply softmax, then compute the row-wise KL divergence as the similarity measure.
         feats_A: B, N, D
         feats_B: B, N, E # can be different from dimension
+        temperature: float, temperature for softmax
         """
         # normalize the features along the last dimension
         feats_A = F.normalize(feats_A, dim=-1)
@@ -359,14 +368,19 @@ class AlignmentMetrics:
         kernel_matrix_B = feats_B @ feats_B.transpose(1, 2)
  
         # treat each row in the kernel matrix as logits and apply softmax                                                                
-        kernel_matrix_A = F.softmax(kernel_matrix_A, dim=-1)                               
-        kernel_matrix_B = F.softmax(kernel_matrix_B, dim=-1)
+        P = F.softmax(kernel_matrix_A / temperature, dim=-1)                               
+        Q = F.softmax(kernel_matrix_B / temperature, dim=-1)
 
-        # compute the similarity of the kernel matrices between A and B
-        # Since each row is now a distribution, we can compute the KL divergence
-        N = kernel_matrix_A.shape[-1]
-        alignment_score = -F.kl_div(kernel_matrix_A.view(-1, N).log(), kernel_matrix_B.view(-1, N), reduction='batchmean')  # []
-        
+        eps = 1e-10
+        P_clamped = torch.clamp(P, min=eps)
+        Q_clamped = torch.clamp(Q, min=eps)
+
+        # KL(P||M) = sum P * log(P/M) over the last dimension (N)
+        # NOTE: This only computes KL(A || B) not the other way around. Use with caution.
+        KL_PQ = torch.sum(P_clamped * (torch.log(P_clamped) - torch.log(Q_clamped)), dim=-1)  # B, N
+
+        # NOTE: The alignment score range is [-inf, 0], not [0, 1]. Use with caution.
+        alignment_score = -KL_PQ.mean()
         return alignment_score.item()
 
     @staticmethod
