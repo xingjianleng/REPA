@@ -32,6 +32,8 @@ class AlignmentMetrics:
         "sample2sample_kernel_alignment_score",
         "patch2patch_kernel_alignment_score_kl_div",
         "sample2sample_kernel_alignment_score_kl_div",
+        "patch2patch_kernel_alignment_score_jsd",
+        "sample2sample_kernel_alignment_score_jsd",
     ]
 
     @staticmethod
@@ -249,35 +251,69 @@ class AlignmentMetrics:
     @staticmethod
     def sample2sample_kernel_alignment_score_jsd(feats_A, feats_B, temperature=1.0):
         """
-        Another variant of sample2sample kernel alignment score as above, but we treat each line as logits, then use softmax
-        and use Jensen-Shannon Divergence as the similarity measure.
-        feats_A: B, N, D
-        feats_B: B, N, E
-        temperature: temperature for the softmax (default: 1.0) use higher values for more smoothing
-        """
-        # take the mean across the N dimension # B, D
-        feats_A = feats_A.mean(dim=-2)
-        feats_B = feats_B.mean(dim=-2)
+        Compute a sample-to-sample kernel alignment score using Jensen-Shannon Divergence.
+        1. Average feats_A and feats_B across the N dimension to get (B, D) and (B, E).
+        2. Normalize features along the last dimension.
+        3. Compute sample-to-sample similarity matrices for A and B (B, B).
+        4. Convert these matrices to probability distributions (softmax).
+        5. Compute the JSD between these distributions.
+        6. Convert JSD to an alignment score = 1 - JSD_mean, return as a scalar.
 
-        # normalize the features along the last dimension
+        Args:
+            feats_A: (B, N, D)
+            feats_B: (B, N, E)
+            temperature: float, temperature for softmax
+
+        Returns:
+            alignment_score: a scalar float value.
+        """
+        # Average features across the N dimension: (B, N, D) -> (B, D)
+        feats_A = feats_A.mean(dim=1)
+        feats_B = feats_B.mean(dim=1)
+
+        # Normalize the features
         feats_A = F.normalize(feats_A, dim=-1)
         feats_B = F.normalize(feats_B, dim=-1)
 
-        # compute the kernel matrix --> sample2sample similarity matrix for both A and B # B, B
+        # Compute similarity matrices (B, B)
         kernel_matrix_A = feats_A @ feats_A.transpose(0, 1)
         kernel_matrix_B = feats_B @ feats_B.transpose(0, 1)
 
-        # treat each row in the kernel matrix as logits and apply softmax with temperature
-        kernel_matrix_A = F.softmax(kernel_matrix_A / temperature, dim=-1)
-        kernel_matrix_B = F.softmax(kernel_matrix_B / temperature, dim=-1)
+        # Convert similarities to probability distributions
+        P = F.softmax(kernel_matrix_A / temperature, dim=-1)  # (B, B)
+        Q = F.softmax(kernel_matrix_B / temperature, dim=-1)  # (B, B)
+        M = 0.5 * (P + Q)  # Mixture distribution
 
-        # compute the mixed distribution and then compute the JSD
-        M = 0.5 * (kernel_matrix_A + kernel_matrix_B)
-        kl_div_A_M = F.kl_div(kernel_matrix_A.log(), M, reduction='batchmean')  # []
-        kl_div_B_M = F.kl_div(kernel_matrix_B.log(), M, reduction='batchmean')  # []
-        jsd = 0.5 * (kl_div_A_M + kl_div_B_M)
-        alignment_score = -jsd
-        return 1-alignment_score.item()
+        eps = 1e-10
+        P_clamped = P.clamp(min=eps)
+        Q_clamped = Q.clamp(min=eps)
+        M_clamped = M.clamp(min=eps)
+
+        # Compute KL divergences using F.kl_div
+        # KL(P||M) = sum(P * log(P/M)) over dim=-1
+        # Using F.kl_div: input=logM, target=P
+        logM = M_clamped.log()
+
+        # Compute KL(P||M) and KL(Q||M) row-wise
+        # KL(P||M) = sum_over_j P_j * log(P_j/M_j)
+        KL_PM = (P_clamped * (P_clamped.log() - M_clamped.log())).sum(dim=-1)  # (B)
+        KL_QM = (Q_clamped * (Q_clamped.log() - M_clamped.log())).sum(dim=-1)  # (B)
+
+        # # equivalent using F.kl_div
+        # KL_PM = F.kl_div(logM, P_clamped, reduction='none', log_target=False).sum(dim=-1)  # (B,)
+        # KL_QM = F.kl_div(logM, Q_clamped, reduction='none', log_target=False).sum(dim=-1)  # (B,)
+
+        # JSD in base 2
+        log2 = torch.log(torch.tensor(2.0))
+        JSD = 0.5 * (KL_PM + KL_QM) / log2  # (B,)
+
+        # Mean JSD across batch
+        JSD_mean = JSD.mean()
+
+        # Alignment score: 1 - JSD
+        alignment_score = 1.0 - JSD_mean
+
+        return alignment_score.item()
 
     @staticmethod
     def patch2patch_kernel_alignment_score(feats_A, feats_B):
@@ -378,6 +414,10 @@ class AlignmentMetrics:
         # KL(P||M) = sum P * log(P/M) over the last dimension (N)
         KL_PM = torch.sum(P_clamped * (torch.log(P_clamped) - torch.log(M_clamped)), dim=-1)
         KL_QM = torch.sum(Q_clamped * (torch.log(Q_clamped) - torch.log(M_clamped)), dim=-1)
+
+        # equivalent using F.kl_div
+        # KL_PM = F.kl_div(M_clamped.log(), P_clamped, reduction='none', log_target=False).sum(dim=-1)  # (B, N)
+        # KL_QM = F.kl_div(M_clamped.log(), Q_clamped, reduction='none', log_target=False).sum(dim=-1)  # (B, N)
 
         # Jensen-Shannon Divergence (base e)
         # JSD = 0.5 * (KL(P||M) + KL(Q||M))
