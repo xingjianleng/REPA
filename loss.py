@@ -165,7 +165,12 @@ class SILoss:
         proj_loss /= (len(zs) * bsz)
 
         # Kernel Alignment across patches
-        if self.loss_type == "patch2patch":
+        if self.loss_type is None:
+            # If no kernel_alignment_loss is given, then set it to 0 and move to corresponding device
+            kernel_alignment_loss = 0.
+            kernel_alignment_loss = torch.tensor(kernel_alignment_loss, device=zs[0].device)
+
+        elif self.loss_type == "patch2patch":
             # NOTE: We should compute kernel alignment with unprojected features only
             for i, (z, f_tilde) in enumerate(zip(zs, fs_tilde)):
                 # NOTE: The loss should be the negative of the alignment score (minimize the negative alignment score)
@@ -179,7 +184,7 @@ class SILoss:
                 kernel_alignment_loss += -self.sample2sample_kernel_alignment_score(z, f_tilde)
             kernel_alignment_loss /= len(zs)
 
-        elif self.loss_type is not None:
+        else:
             raise NotImplementedError(f"Loss type {self.loss_type} not implemented")
 
         alignment_scores = None

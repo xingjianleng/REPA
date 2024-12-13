@@ -482,7 +482,7 @@ def parse_args(input_args=None):
 
     # loss
     parser.add_argument("--path-type", type=str, default="linear", choices=["linear", "cosine"])
-    parser.add_argument("--loss-type", type=str, default=None, choices=["patch2patch"])
+    parser.add_argument("--loss-type", type=str, default=None, choices=["patch2patch", "sample2sample"])
     parser.add_argument("--prediction", type=str, default="v", choices=["v"]) # currently we only support v-prediction
     parser.add_argument("--cfg-prob", type=float, default=0.1)
     parser.add_argument("--enc-type", type=str, default='dinov2-vit-b')
