@@ -81,7 +81,40 @@ class SILoss:
         alignment_score = alignment_score.mean(dim=1).mean(dim=0)
         return alignment_score
 
-    def __call__(self, model, images, model_kwargs=None, zs=None, compute_cknna=False, cknna_topk=10):
+    @staticmethod
+    def sample2sample_kernel_alignment_score(feats_A, feats_B):
+        """
+        Compute the sample2sample kernel alignment score between two sets of features.
+        Use a copy from the metrics.py to retain the gradient computation.
+        feats_A: B, N, D
+        feats_B: B, N, E
+        """
+        # take the mean across last dimension # B, D
+        feats_A = feats_A.mean(dim=-2)
+        feats_B = feats_B.mean(dim=-2)
+
+        # normalize the features along the last dimension
+        feats_A = F.normalize(feats_A, dim=-1)
+        feats_B = F.normalize(feats_B, dim=-1)
+
+        # compute the kernel matrix --> sample2sample similarity matrix for both A and B # B, B
+        kernel_matrix_A = feats_A @ feats_A.transpose(0, 1)
+        kernel_matrix_B = feats_B @ feats_B.transpose(0, 1)
+
+        # normalize the rows for both kernel matrices
+        kernel_matrix_A = F.normalize(kernel_matrix_A, dim=-1)
+        kernel_matrix_B = F.normalize(kernel_matrix_B, dim=-1)
+
+        # compute the similarity of the kernel matrices between A and B
+        # Since each row is now a unit vector, the dot product of corresponding rows
+        # will be 1 if they are identical.
+        alignment_score = (kernel_matrix_A * kernel_matrix_B).sum(dim=-1)  # B
+
+        # average the alignment score across the samples
+        alignment_score = alignment_score.mean(dim=0)
+        return alignment_score
+
+    def __call__(self, model, images, model_kwargs=None, zs=None, alignment_kwargs=None):
         if model_kwargs == None:
             model_kwargs = {}
         # sample timesteps
@@ -111,8 +144,11 @@ class SILoss:
             raise NotImplementedError() # TODO: add x or eps prediction
 
         # Noise prediction, features after projection, features before projection
-        model_output, zs_tilde, fs_tilde, all_layer_feats = model(model_input, time_input.flatten(), use_projection=True,
-                                                                  return_all_layers=compute_cknna, **model_kwargs)
+        model_output, zs_tilde, fs_tilde, all_layer_feats = model(
+            model_input, time_input.flatten(), use_projection=True,
+            return_all_layers=alignment_kwargs["compute_alignment"] and alignment_kwargs["max_score_across_layers"],
+            **model_kwargs
+        )
         denoising_loss = mean_flat((model_output - model_target) ** 2)
 
         # projection and kernel alignment loss
@@ -136,30 +172,104 @@ class SILoss:
                 kernel_alignment_loss += -self.patch2patch_kernel_alignment_score(z, f_tilde)
             kernel_alignment_loss /= len(zs)
 
+        elif self.loss_type == "sample2sample":
+            # NOTE We should compute kernel alignment with unprojected features only
+            for i, (z, f_tilde) in enumerate(zip(zs, fs_tilde)):
+                # NOTE: The loss should be the negative of the alignment score (minimize the negative alignment score)
+                kernel_alignment_loss += -self.sample2sample_kernel_alignment_score(z, f_tilde)
+            kernel_alignment_loss /= len(zs)
+
         elif self.loss_type is not None:
             raise NotImplementedError(f"Loss type {self.loss_type} not implemented")
 
-        cknna_alignment_score = None
-        if compute_cknna:
-            cknna_alignment_scores = []
-            # NOTE: We should compute CKNNA with unprojected features only
-            for all_layer_feat in all_layer_feats:
-                curr_cknna_alignment_score = 0.
-                for z, f_tilde in zip(zs, all_layer_feat):
-                    # NOTE: For the CKNNA score, we take the mean across patches, to get a single feature vector for each sample
-                    curr_cknna_score = AlignmentMetrics.cknna(
-                        feats_A=z.mean(dim=1),
-                        feats_B=f_tilde.mean(dim=1),
-                        topk=cknna_topk,
-                    )
-                    curr_cknna_alignment_score += curr_cknna_score
+        alignment_scores = None
 
-                curr_cknna_alignment_score /= len(zs)
-                cknna_alignment_scores.append(curr_cknna_alignment_score)
+        if alignment_kwargs["compute_alignment"]:
+            alignment_scores = {}
+            with torch.no_grad():
+                # Iterate through all metrics
+                for metric in alignment_kwargs["log_alignment_metrics"]:
 
-            # Choose the maximum CKNNA alignment score across all layers
-            cknna_alignment_score = max(cknna_alignment_scores)
-            # NOTE: We cast the cknna_alignment_score to a tensor for compatibility with all_gather across GPUs
-            cknna_alignment_score = torch.tensor(cknna_alignment_score, device=z.device)
+                    # If we want to get the max score across all layers
+                    if alignment_kwargs["max_score_across_layers"]:
+                        curr_metric_scores = []
+                        assert all_layer_feats is not None, "All layer features should be computed for logging all layers"
+                        # Iterate through layers
+                        for curr_layer_feat in all_layer_feats:
+                            curr_alignment_score = 0.
+                            for z, f_tilde in zip(zs, curr_layer_feat):
+                                measure_kwargs = {}
+                                if "kernel_alignment" in metric:
+                                    # Our method assumes [B, L, D]
+                                    feats_A = z
+                                    feats_B = f_tilde
+                                else:
+                                    # Rep paper method assumes [B, D]
+                                    feats_A = z.mean(dim=1)
+                                    feats_B = f_tilde.mean(dim=1)
+                                
+                                if metric == "cknna":
+                                    # cknna needs topk
+                                    measure_kwargs["topk"] = alignment_kwargs["cknna_topk"]
+                                elif metric == "patch2patch_kernel_alignment_score_jsd":
+                                    # jsd needs temperature
+                                    measure_kwargs["temperature"] = alignment_kwargs["p2p_jsd_temp"]
+                                elif metric == "sample2sample_kernel_alignment_score_jsd":
+                                    # jsd needs temperature
+                                    measure_kwargs["temperature"] = alignment_kwargs["s2s_jsd_temp"]
 
-        return denoising_loss, proj_loss, kernel_alignment_loss, cknna_alignment_score
+                                curr_score = AlignmentMetrics.measure(
+                                    metric=metric,
+                                    feats_A=feats_A,
+                                    feats_B=feats_B,
+                                    **measure_kwargs
+                                )
+                                curr_alignment_score += curr_score
+
+                            curr_alignment_score /= len(zs)
+                            curr_metric_scores.append(curr_alignment_score)
+
+                        # Get the max metric score across layers and move it to GPU for reduce
+                        max_metric_score = max(curr_metric_scores)
+                        max_metric_score = torch.tensor(max_metric_score, device=z.device)
+                        alignment_scores[metric] = max_metric_score
+
+                    # Otherwise, we just compute the alignment score for the aligned layer (fs_tilde)
+                    else:
+                        curr_alignment_score = 0.
+                        for z, f_tilde in zip(zs, fs_tilde):
+                            # NOTE: For the CKNNA score, we take the mean across patches, to get a single feature vector for each sample
+                            measure_kwargs = {}
+                            if "kernel_alignment" in metric:
+                                # Our method assumes [B, L, D]
+                                feats_A = z
+                                feats_B = f_tilde
+                            else:
+                                # Rep paper method assumes [B, D]
+                                feats_A = z.mean(dim=1)
+                                feats_B = f_tilde.mean(dim=1)
+
+                            if metric == "cknna":
+                                # cknna needs topk
+                                measure_kwargs["topk"] = alignment_kwargs["cknna_topk"]
+                            elif metric == "patch2patch_kernel_alignment_score_jsd":
+                                # jsd needs temperature
+                                measure_kwargs["temperature"] = alignment_kwargs["p2p_jsd_temp"]
+                            elif metric == "sample2sample_kernel_alignment_score_jsd":
+                                # jsd needs temperature
+                                measure_kwargs["temperature"] = alignment_kwargs["s2s_jsd_temp"]
+
+                            curr_score = AlignmentMetrics.measure(
+                                metric=metric,
+                                feats_A=feats_A,
+                                feats_B=feats_B,
+                                **measure_kwargs
+                            )
+                            curr_alignment_score += curr_score
+
+                        # Convert it to tensor for reduce
+                        curr_alignment_score /= len(zs)
+                        curr_alignment_score = torch.tensor(curr_alignment_score, device=z.device)
+                        alignment_scores[metric] = curr_alignment_score
+
+        return denoising_loss, proj_loss, kernel_alignment_loss, alignment_scores

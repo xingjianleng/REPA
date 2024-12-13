@@ -35,6 +35,14 @@ logger = get_logger(__name__)
 
 CLIP_DEFAULT_MEAN = (0.48145466, 0.4578275, 0.40821073)
 CLIP_DEFAULT_STD = (0.26862954, 0.26130258, 0.27577711)
+# NOTE: Add more as needed
+METRICS2WANDB_MAP = {
+    "cknna": "cknna_score",
+    "patch2patch_kernel_alignment_score": "patch2patch_ka_score",
+    "sample2sample_kernel_alignment_score": "sample2sample_ka_score",
+    "patch2patch_kernel_alignment_score_jsd": "patch2patch_ka_jsd",
+    "sample2sample_kernel_alignment_score_jsd": "sample2sample_ka_jsd",
+}
 
 def preprocess_raw_image(x, enc_type):
     if 'clip' in enc_type:
@@ -319,9 +327,19 @@ def main(args):
 
             with accelerator.accumulate(model):
                 model_kwargs = dict(y=labels)
-                compute_cknna = global_step % args.log_cknna_steps == 0
-                loss, proj_loss, ka_loss, cknna_score = loss_fn(model, x, model_kwargs, zs=zs,
-                                                                compute_cknna=compute_cknna, cknna_topk=args.cknna_topk)
+                # Whether to compute alignment metrics
+                alignment_kwargs = {
+                    "compute_alignment": global_step % args.log_alignment_steps == 0,
+                    "log_alignment_metrics": args.log_alignment_metrics,
+                    "max_score_across_layers": args.max_score_across_layers,
+                    "cknna_topk": args.cknna_topk,
+                    "p2p_jsd_temp": args.p2p_jsd_temp,
+                    "s2s_jsd_temp": args.s2s_jsd_temp,
+                }
+                loss, proj_loss, ka_loss, alignment_scores = loss_fn(
+                    model, x, model_kwargs, zs=zs,
+                    alignment_kwargs=alignment_kwargs
+                )
                 loss_mean = loss.mean()
                 proj_loss_mean = proj_loss.mean()
                 ka_loss_mean = ka_loss.mean()
@@ -353,8 +371,10 @@ def main(args):
                     "grad_norm": accelerator.gather(grad_norm).mean().detach().item()
                 }
                 # log the cknna score to keep track of the alignment
-                if cknna_score is not None:
-                    logs["cknna_score"] = accelerator.gather(cknna_score).mean().detach().item()
+                if alignment_scores is not None:
+                    # log the alignment scores. For compatibility with wandb, we use a specific naming convention dict
+                    for metric, value in alignment_scores.items():
+                        logs[METRICS2WANDB_MAP[metric]] = accelerator.gather(value).mean().detach().item()
                 progress_bar.set_postfix(**logs)
                 accelerator.log(logs, step=global_step)
             if global_step % args.checkpointing_steps == 0 and global_step > 0:
@@ -438,8 +458,14 @@ def parse_args(input_args=None):
     parser.add_argument("--epochs", type=int, default=1400)
     parser.add_argument("--max-train-steps", type=int, default=400000)
     parser.add_argument("--checkpointing-steps", type=int, default=40000)
-    parser.add_argument("--log-cknna-steps", type=int, default=500)
+    parser.add_argument("--log-alignment-steps", type=int, default=500)
+    parser.add_argument("--log-alignment-metrics", type=str, nargs='+',
+                        default=["cknna", "patch2patch_kernel_alignment_score", "sample2sample_kernel_alignment_score",
+                                 "patch2patch_kernel_alignment_score_jsd", "sample2sample_kernel_alignment_score_jsd"])
+    parser.add_argument("--max-score-across-layers", action="store_true")
     parser.add_argument("--cknna-topk", type=int, default=10)
+    parser.add_argument("--p2p-jsd-temp", type=float, default=0.1)
+    parser.add_argument("--s2s-jsd-temp", type=float, default=0.2)
     parser.add_argument("--gradient-accumulation-steps", type=int, default=1)
     parser.add_argument("--learning-rate", type=float, default=1e-4)
     parser.add_argument("--adam-beta1", type=float, default=0.9, help="The beta1 parameter for the Adam optimizer.")
