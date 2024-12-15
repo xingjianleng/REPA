@@ -25,7 +25,7 @@ TEMPLATE = """#!/bin/bash
 source /scratch3/zha439/miniconda3/bin/activate
 
 conda activate repa
-torchrun --nnodes=1 --nproc_per_node=2 --rdzv_backend=c10d --master_port=0 generate.py \
+torchrun --nnodes=1 --nproc_per_node=2 --rdzv_backend=c10d --rdzv_endpoint localhost:0 generate.py \
     --num-fid-samples 20000 \
     --path-type linear \
     --per-proc-batch-size 256 \
