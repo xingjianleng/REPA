@@ -1,4 +1,5 @@
 monitored_experiments:
+  # NOTE: Add more or comment out the experiments you want to monitor below
   # REPA
   sit-xl-linear-dinov2-b-enc8-50k:
     projector_embed_dims: 768

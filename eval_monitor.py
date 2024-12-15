@@ -7,9 +7,9 @@ import subprocess
 EXP_FOLDER = "exps/"
 EVAL_FOLDER = "evals_2/"
 SAMPLES_FOLDER = "samples/"
-JOB_FILES_TEMP = "job_files_temp/"
+JOB_FILES_TEMP = "autoeval_jobs_temp/"
 CFG_PATH = "configs/eval_monitor_cfg.yaml"
-SCAN_INTERVAL = 5
+SCAN_INTERVAL = 0.5
 
 # SLURM job script template
 TEMPLATE = """#!/bin/bash
@@ -18,8 +18,8 @@ TEMPLATE = """#!/bin/bash
 #SBATCH --output=slurm_outputs/eval_monitor_generated_job_%A_%j.out
 #SBATCH --error=slurm_outputs/eval_monitor_generated_job_%A_%j.err
 #SBATCH --time=02:00:00
-#SBATCH --mem=128G
-#SBATCH --cpus-per-task=16
+#SBATCH --mem=64G
+#SBATCH --cpus-per-task=8
 #SBATCH --gres=gpu:2
 
 source /scratch3/zha439/miniconda3/bin/activate
@@ -75,8 +75,11 @@ def main():
             # List all checkpoint files
             ckpt_files = [f for f in os.listdir(ckpt_path) if f.endswith(".pt")]
             for ckpt_file in ckpt_files:
+                # if os.path.exists(os.path.join(EVAL_FOLDER, f"{exp_name_ckpt}.csv")):
+                #     continue
                 exp_name_ckpt = f"{exp_name}_{ckpt_file.replace('.pt', '')}"
-                if os.path.exists(os.path.join(EVAL_FOLDER, f"{exp_name_ckpt}.csv")):
+                job_script_path = os.path.join(JOB_FILES_TEMP, f"eval_monitor_generated_job_{exp_name_ckpt}.sh")
+                if os.path.exists(os.path.join(EVAL_FOLDER, f"{exp_name_ckpt}.csv")) or os.path.exists(job_script_path):
                     continue
 
                 ckpt_full_path = os.path.join(ckpt_path, ckpt_file)
@@ -91,11 +94,10 @@ def main():
                     model=params['model'],
                     npz_path=os.path.join(SAMPLES_FOLDER, f"{exp_name_ckpt}.npz"),
                     eval_folder=EVAL_FOLDER,
-                    exp_sample_dir=os.path.join(SAMPLES_FOLDER, exp_name),
+                    exp_sample_dir=os.path.join(SAMPLES_FOLDER, exp_name_ckpt),
                 )
 
                 # Write the job script to a temporary file
-                job_script_path = os.path.join(JOB_FILES_TEMP, f"eval_monitor_generated_job_{exp_name_ckpt}.sh")
                 with open(job_script_path, 'w') as job_file:
                     job_file.write(job_script_content)
 
@@ -106,8 +108,8 @@ def main():
                 except subprocess.CalledProcessError as e:
                     print(f"Failed to submit SLURM job for {ckpt_file}: {e.stderr.strip()}")
 
-        # Wait before the next scan
-        time.sleep(SCAN_INTERVAL)
+            # Wait before the next scan
+            time.sleep(SCAN_INTERVAL)
 
 
 if __name__ == "__main__":
