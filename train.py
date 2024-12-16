@@ -172,7 +172,8 @@ def main(args):
         num_classes=args.num_classes,
         use_cfg = (args.cfg_prob > 0),
         z_dims = z_dims,
-        encoder_depth=args.encoder_depth,
+        encoder_depth_repa=args.encoder_depth_repa,
+        encoder_depth_ka=args.encoder_depth_ka,
         **block_kwargs
     )
 
@@ -443,7 +444,10 @@ def parse_args(input_args=None):
     # model
     parser.add_argument("--model", type=str)
     parser.add_argument("--num-classes", type=int, default=1000)
-    parser.add_argument("--encoder-depth", type=int, default=8)
+    parser.add_argument("--encoder-depth-repa", type=int, nargs='+', default=[8],
+                        help="The encoder layer to align")
+    parser.add_argument("--encoder-depth-ka", type=int, nargs='+', default=[8],
+                        help="The encoder layer to align for kernel alignment")
     parser.add_argument("--fused-attn", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--qk-norm",  action=argparse.BooleanOptionalAction, default=False)
 

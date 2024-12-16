@@ -169,7 +169,8 @@ class SiT(nn.Module):
         in_channels=4,
         hidden_size=1152,
         decoder_hidden_size=768,
-        encoder_depth=8,
+        encoder_depth_repa=[8],
+        encoder_depth_ka=[8],
         depth=28,
         num_heads=16,
         mlp_ratio=4.0,
@@ -189,7 +190,8 @@ class SiT(nn.Module):
         self.use_cfg = use_cfg
         self.num_classes = num_classes
         self.z_dims = z_dims
-        self.encoder_depth = encoder_depth
+        self.encoder_depth_repa = encoder_depth_repa
+        self.encoder_depth_ka = encoder_depth_ka
 
         self.x_embedder = PatchEmbed(
             input_size, patch_size, in_channels, hidden_size, bias=True
@@ -262,7 +264,7 @@ class SiT(nn.Module):
         imgs = x.reshape(shape=(x.shape[0], c, h * p, w * p))
         return imgs
     
-    def forward(self, x, t, y, return_logvar=False, use_projection=True, return_all_layers=False):
+    def forward(self, x, t, y, return_logvar=False, ka_use_projection=True, return_all_layers=False):
         """
         Forward pass of SiT.
         x: (N, C, H, W) tensor of spatial inputs (images or latent representations of images)
@@ -274,6 +276,9 @@ class SiT(nn.Module):
 
         # This should return features before projection for all layers, they won't be served for training purposes, so will be detached.
         all_layer_feats = []
+        zs = []  # features aft projection for REPA loss
+        fs = []  # features (aft/bef projection, depending on use_projection argument) for kernel alignment loss computation
+        unprojected_detached_feats = []  # compute alignment score purposes
 
         # timestep and class embedding
         t_embed = self.t_embedder(t)                   # (N, D)
@@ -286,17 +291,25 @@ class SiT(nn.Module):
             if return_all_layers:
                 all_layer_feats.append([x.detach() for _ in range(len(self.projectors))])
 
-            if (i + 1) == self.encoder_depth:
-                # Get the feature before projection
-                fs = [x.clone() for _ in range(len(self.projectors))]
-                if use_projection:
-                    zs = [projector(x.reshape(-1, D)).reshape(N, T, -1) for projector in self.projectors]
+            if (i + 1) in self.encoder_depth_ka:
+                # `use_projection` should be the same as `ka_aft_proj`, `zs` is for kernel alignment loss computation
+                if ka_use_projection:
+                    fs.append([projector(x.reshape(-1, D)).reshape(N, T, -1) for projector in self.projectors])
                 else:
-                    zs = [x.clone() for _ in range(len(self.projectors))]
+                    fs.append([x.clone() for _ in range(len(self.projectors))])
+
+            if (i + 1) in self.encoder_depth_repa:
+                # Get the feature after projection for REPA computation
+                zs.append([projector(x.reshape(-1, D)).reshape(N, T, -1) for projector in self.projectors])
+            
+            if (i + 1) in self.encoder_depth_ka and (i + 1) in self.encoder_depth_repa:
+                # NOTE: We use it for logging purposes, so we focus on layers that are used for both losses
+                unprojected_detached_feats.append([x.detach() for _ in range(len(self.projectors))])
+
         x = self.final_layer(x, c)                # (N, T, patch_size ** 2 * out_channels)
         x = self.unpatchify(x)                   # (N, out_channels, H, W)
 
-        return x, zs, fs, all_layer_feats
+        return x, zs, fs, unprojected_detached_feats, all_layer_feats
 
     def forward_features(self, x, t, y):
         x = self.x_embedder(x) + self.pos_embed  # (N, T, D), where T = H * W / patch_size ** 2

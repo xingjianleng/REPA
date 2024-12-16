@@ -294,8 +294,11 @@ class SILoss:
             raise NotImplementedError() # TODO: add x or eps prediction
 
         # Noise prediction, features after projection, features before projection
-        model_output, zs_tilde, fs_tilde, all_layer_feats = model(
-            model_input, time_input.flatten(), use_projection=True,
+        # NOTE: 
+        # 1. `zs_tilde` is for REPA alignment, it must be after projection layer
+        # 2. `fs_tilde` is for kernel alignment, it can be before or after projection layer depending on `ka_after_proj`
+        model_output, zs_tilde_layers, fs_tilde_layers, unprojected_detached_feats, all_layer_feats = model(
+            model_input, time_input.flatten(), ka_use_projection=alignment_kwargs["ka_aft_proj"],
             return_all_layers=alignment_kwargs["compute_alignment"] and alignment_kwargs["max_score_across_layers"],
             **model_kwargs
         )
@@ -307,21 +310,16 @@ class SILoss:
         bsz = zs[0].shape[0]
         # REPA loss
         proj_loss = 0.
-        for i, (z, z_tilde) in enumerate(zip(zs, zs_tilde)):
-            for j, (z_j, z_tilde_j) in enumerate(zip(z, z_tilde)):
-                z_tilde_j = torch.nn.functional.normalize(z_tilde_j, dim=-1) 
-                z_j = torch.nn.functional.normalize(z_j, dim=-1) 
-                proj_loss += mean_flat(-(z_j * z_tilde_j).sum(dim=-1))
-        proj_loss /= (len(zs) * bsz)
+        for zs_tilde in zs_tilde_layers:
+            for i, (z, z_tilde) in enumerate(zip(zs, zs_tilde)):
+                for j, (z_j, z_tilde_j) in enumerate(zip(z, z_tilde)):
+                    z_tilde_j = torch.nn.functional.normalize(z_tilde_j, dim=-1) 
+                    z_j = torch.nn.functional.normalize(z_j, dim=-1) 
+                    proj_loss += mean_flat(-(z_j * z_tilde_j).sum(dim=-1))
+        proj_loss /= (len(zs) * bsz * len(zs_tilde_layers))
 
-        # Kernel Alignment across patches
-        if alignment_kwargs["ka_aft_proj"]:
-            # Use the feature after projection -> zs_tilde
-            ka_feats = zs_tilde
-        else:
-            # Use the feature before projection -> fs
-            ka_feats = fs_tilde
 
+        # Compute the kernel alignment loss
         if self.loss_type is None:
             # If no kernel_alignment_loss is given, then set it to 0 and move to corresponding device
             kernel_alignment_loss = 0.
@@ -329,24 +327,28 @@ class SILoss:
 
         elif self.loss_type == "patch2patch":
             # NOTE: We should compute kernel alignment with unprojected features only
-            for i, (z, ka_feat) in enumerate(zip(zs, ka_feats)):
-                # NOTE: The loss should be the negative of the alignment score (minimize the negative alignment score)
-                kernel_alignment_loss += -self.patch2patch_kernel_alignment_score(z, ka_feat, detach_grad=alignment_kwargs["ka_detach_grad"])
+            for fs_tilde in fs_tilde_layers:
+                for i, (z, f_tilde) in enumerate(zip(zs, fs_tilde)):
+                    # NOTE: The loss should be the negative of the alignment score (minimize the negative alignment score)
+                    kernel_alignment_loss += -self.patch2patch_kernel_alignment_score(z, f_tilde, detach_grad=alignment_kwargs["ka_detach_grad"])
 
         elif self.loss_type == "patch2patch_jsd":
             # NOTE: JSD requires the temperature arugmnet
-            for i, (z, ka_feat) in enumerate(zip(zs, ka_feats)):
-                kernel_alignment_loss += -self.patch2patch_kernel_alignment_score_jsd(z, ka_feat, temperature=alignment_kwargs["p2p_jsd_temp"], detach_grad=alignment_kwargs["ka_detach_grad"])
+            for fs_tilde in fs_tilde_layers:
+                for i, (z, f_tilde) in enumerate(zip(zs, fs_tilde)):
+                    kernel_alignment_loss += -self.patch2patch_kernel_alignment_score_jsd(z, f_tilde, temperature=alignment_kwargs["p2p_jsd_temp"], detach_grad=alignment_kwargs["ka_detach_grad"])
 
         elif self.loss_type == "sample2sample":
             # NOTE We should compute kernel alignment with unprojected features only
-            for i, (z, ka_feat) in enumerate(zip(zs, ka_feats)):
-                # NOTE: The loss should be the negative of the alignment score (minimize the negative alignment score)
-                kernel_alignment_loss += -self.sample2sample_kernel_alignment_score(z, ka_feat, detach_grad=alignment_kwargs["ka_detach_grad"])
+            for fs_tilde in fs_tilde_layers:
+                for i, (z, f_tilde) in enumerate(zip(zs, fs_tilde)):
+                    # NOTE: The loss should be the negative of the alignment score (minimize the negative alignment score)
+                    kernel_alignment_loss += -self.sample2sample_kernel_alignment_score(z, f_tilde, detach_grad=alignment_kwargs["ka_detach_grad"])
 
         elif self.loss_type == "sample2sample_jsd":
-            for i, (z, ka_feat) in enumerate(zip(zs, ka_feats)):
-                kernel_alignment_loss += -self.sample2sample_kernel_alignment_score_jsd(z, ka_feat, temperature=alignment_kwargs["s2s_jsd_temp"], detach_grad=alignment_kwargs["ka_detach_grad"])
+            for fs_tilde in fs_tilde_layers:
+                for i, (z, f_tilde) in enumerate(zip(zs, fs_tilde)):
+                    kernel_alignment_loss += -self.sample2sample_kernel_alignment_score_jsd(z, f_tilde, temperature=alignment_kwargs["s2s_jsd_temp"], detach_grad=alignment_kwargs["ka_detach_grad"])
 
         else:
             raise NotImplementedError(f"Loss type {self.loss_type} not implemented")
@@ -407,17 +409,19 @@ class SILoss:
                     # Otherwise, we just compute the alignment score for the aligned layer (fs_tilde)
                     else:
                         curr_alignment_score = 0.
-                        for z, f_tilde in zip(zs, fs_tilde):
+                        assert len(unprojected_detached_feats) > 0, "There should be at least one layer that is aligned with both REPA and kernel alignment..."
+                        unprojected_detached_feat = unprojected_detached_feats[-1]  # Let's use the last layer to evaluate alignment
+                        for z, feat_tilde in zip(zs, unprojected_detached_feat):
                             # NOTE: For the CKNNA score, we take the mean across patches, to get a single feature vector for each sample
                             measure_kwargs = {}
                             if "kernel_alignment" in metric:
                                 # Our method assumes [B, L, D]
                                 feats_A = z
-                                feats_B = f_tilde
+                                feats_B = feat_tilde
                             else:
                                 # Rep paper method assumes [B, D]
                                 feats_A = z.mean(dim=1)
-                                feats_B = f_tilde.mean(dim=1)
+                                feats_B = feat_tilde.mean(dim=1)
 
                             if metric == "cknna":
                                 # cknna needs topk
