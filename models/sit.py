@@ -278,7 +278,7 @@ class SiT(nn.Module):
         # timestep and class embedding
         t_embed = self.t_embedder(t)                   # (N, D)
         y = self.y_embedder(y, self.training)    # (N, D)
-        c = t_embed + y                                # (N, D)
+        c = t_embed + y                     # (N, D)
 
         for i, block in enumerate(self.blocks):
             x = block(x, c)                      # (N, T, D)
