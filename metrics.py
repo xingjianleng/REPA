@@ -188,7 +188,7 @@ class AlignmentMetrics:
     
     
     @staticmethod
-    def sample2sample_kernel_alignment_score(feats_A, feats_B):
+    def sample2sample_kernel_alignment_score(feats_A, feats_B, detach_grad=False):
         """
         feats_A: B, N, D
         feats_B: B, N, E
@@ -202,6 +202,10 @@ class AlignmentMetrics:
         feats_B = F.normalize(feats_B, dim=-1)
 
         # compute the kernel matrix --> sample2sample similarity matrix for both A and B # B, B
+        if detach_grad:
+            feats_A_ = feats_A.clone().detach()
+        else:
+            feats_A_ = feats_A
         kernel_matrix_A = feats_A @ feats_A.transpose(0, 1)
         kernel_matrix_B = feats_B @ feats_B.transpose(0, 1)
 
@@ -257,7 +261,7 @@ class AlignmentMetrics:
         return alignment_score.item()
 
     @staticmethod
-    def sample2sample_kernel_alignment_score_jsd(feats_A, feats_B, temperature=1.0):
+    def sample2sample_kernel_alignment_score_jsd(feats_A, feats_B, temperature=1.0, detach_grad=False):
         """
         Compute a sample-to-sample kernel alignment score using Jensen-Shannon Divergence.
         1. Average feats_A and feats_B across the N dimension to get (B, D) and (B, E).
@@ -284,6 +288,10 @@ class AlignmentMetrics:
         feats_B = F.normalize(feats_B, dim=-1)
 
         # Compute similarity matrices (B, B)
+        if detach_grad:
+            feats_A_ = feats_A.clone().detach()
+        else:
+            feats_A_ = feats_A
         kernel_matrix_A = feats_A @ feats_A.transpose(0, 1)
         kernel_matrix_B = feats_B @ feats_B.transpose(0, 1)
 
@@ -324,7 +332,7 @@ class AlignmentMetrics:
         return alignment_score.item()
 
     @staticmethod
-    def patch2patch_kernel_alignment_score(feats_A, feats_B):
+    def patch2patch_kernel_alignment_score(feats_A, feats_B, detach_grad=False):
         """
         feats_A: B, N, D
         feats_B: B, N, E # can be different from dimension
@@ -334,7 +342,11 @@ class AlignmentMetrics:
         feats_B = F.normalize(feats_B, dim=-1)
 
         # compute the kernel matrix --> patch2patch similarity matrix for both A and B # B, N, N
-        kernel_matrix_A = feats_A @ feats_A.transpose(1, 2)
+        if detach_grad:
+            feats_A_ = feats_A.clone().detach()
+        else:
+            feats_A_ = feats_A
+        kernel_matrix_A = feats_A @ feats_A_.transpose(1, 2)
         kernel_matrix_B = feats_B @ feats_B.transpose(1, 2)
 
         # normalize the rows for both kernel matrices
@@ -384,7 +396,7 @@ class AlignmentMetrics:
         return alignment_score.item()
 
     @staticmethod
-    def patch2patch_kernel_alignment_score_jsd(feats_A, feats_B, temperature=1.0):
+    def patch2patch_kernel_alignment_score_jsd(feats_A, feats_B, temperature=1.0, detach_grad=False):
         """
         Compute a patch-to-patch kernel alignment score using Jensen-Shannon Divergence.
         For each sample in the batch, we:
@@ -409,6 +421,10 @@ class AlignmentMetrics:
         feats_B = F.normalize(feats_B, dim=-1)
 
         # Compute patch-to-patch similarity matrices (B, N, N)
+        if detach_grad:
+            feats_A_ = feats_A.clone().detach()
+        else:
+            feats_A_ = feats_A
         kernel_matrix_A = feats_A @ feats_A.transpose(1, 2)
         kernel_matrix_B = feats_B @ feats_B.transpose(1, 2)
 
