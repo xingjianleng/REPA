@@ -8,17 +8,23 @@ import matplotlib.pyplot as plt
 
 
 EXPS = {
-    "sit-b-base-400k-SiT-B-2-": "sit-b-base-400k",
-    "sit-b-linear-dinov2-b-enc8-400k-SiT-B-2-": "sit-b-linear-dinov2-b-enc8-400k",
+    # "sit-b-base-400k-SiT-B-2-": "sit-b-base-400k",
+    # "sit-b-linear-dinov2-b-enc8-400k-SiT-B-2-": "sit-b-linear-dinov2-b-enc8-400k",
     # "sit-l-base-400k-SiT-L-2-": "sit-l-base-400k",
     # "sit-l-linear-dinov2-l-enc8-400k-SiT-L-2-": "sit-l-linear-dinov2-l-enc8-400k",
     # "sit-xl-base-400k-SiT-XL-2-": "sit-xl-base-400k",
     # "sit-xl-linear-dinov2-b-enc8-400k-SiT-XL-2-": "sit-xl-linear-dinov2-b-enc8-400k",
-    "sit-b-linear-dinov2-b-enc8-patch-0.5-400k-SiT-B-2-": "sit-b-linear-dinov2-b-enc8-patch-0.5-400k",
-    "sit-b-linear-dinov2-b-enc8-patch-0.75-400k-SiT-B-2-": "sit-b-linear-dinov2-b-enc8-patch-0.75-400k",
-    "sit-b-linear-dinov2-b-enc8-repa-patch-0.5-400k-SiT-B-2-": "sit-b-linear-dinov2-b-enc8-repa-patch-0.5-400k",
-    "sit-b-linear-dinov2-b-enc8-repa-patch-0.75-400k-SiT-B-2-": "sit-b-linear-dinov2-b-enc8-repa-patch-0.75-400k",
-    "sit-b-linear-dinov2-b-enc8-repa-patch-1.0-400k-SiT-B-2-": "sit-b-linear-dinov2-b-enc8-repa-patch-1.0-400k",
+    # "sit-b-linear-dinov2-b-enc8-patch-0.5-400k-SiT-B-2-": "sit-b-linear-dinov2-b-enc8-patch-0.5-400k",
+    # "sit-b-linear-dinov2-b-enc8-patch-0.75-400k-SiT-B-2-": "sit-b-linear-dinov2-b-enc8-patch-0.75-400k",
+    # "sit-b-linear-dinov2-b-enc8-repa-patch-0.5-400k-SiT-B-2-": "sit-b-linear-dinov2-b-enc8-repa-patch-0.5-400k",
+    # "sit-b-linear-dinov2-b-enc8-repa-patch-0.75-400k-SiT-B-2-": "sit-b-linear-dinov2-b-enc8-repa-patch-0.75-400k",
+    # "sit-b-linear-dinov2-b-enc8-repa-patch-1.0-400k-SiT-B-2-": "sit-b-linear-dinov2-b-enc8-repa-patch-1.0-400k",
+    "sit-xl-linear-dinov2-b-enc8-400k-full-SiT-XL-2-": "sit-xl-linear-dinov2-b-enc8-400k",
+    # "sit-xl-linear-dinov2-b-enc8-patch2patch-coeff0.1-400k-SiT-XL-2-": "sit-xl-linear-dinov2-b-enc8-patch2patch-coeff0.1-400k",
+    "sit-xl-linear-dinov2-b-enc8-patch2patch-coeff0.2-400k-full-SiT-XL-2-": "sit-xl-linear-dinov2-b-enc8-patch2patch-coeff0.2-400k",
+    # "sit-xl-linear-dinov2-b-enc8-patch2patch-coeff0.3-400k-SiT-XL-2-": "sit-xl-linear-dinov2-b-enc8-patch2patch-coeff0.3-400k",
+    # "sit-xl-linear-dinov2-b-enc8-patch2patch-coeff0.4-400k-SiT-XL-2-": "sit-xl-linear-dinov2-b-enc8-patch2patch-coeff0.4-400k",
+    # "sit-xl-linear-dinov2-b-enc8-patch2patch-coeff0.5-400k-SiT-XL-2-": "sit-xl-linear-dinov2-b-enc8-patch2patch-coeff0.5-400k",
 }
 
 
@@ -37,6 +43,7 @@ def main(args):
         chosen_csv_files = [f for f in csv_files if k in f]
         for csv_file in chosen_csv_files:
             df = pd.read_csv(os.path.join(args.eval_dir, csv_file))
+            # fid = df["sFID"].values.item()
             fid = df["FID"].values.item()
             step = int(csv_file.split(k)[1].split(eval_cfg)[0])
             fid_scores.append(fid)

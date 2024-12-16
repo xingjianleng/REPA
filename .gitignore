@@ -11,3 +11,5 @@ pretrained_models*
 samples*
 evals*
 classify_image_graph_def.pb
+*.png
+autoeval_jobs_temp*

@@ -1,0 +1,26 @@
+monitored_experiments:
+  # NOTE: Add more or comment out the experiments you want to monitor below
+  # REPA
+  sit-xl-linear-dinov2-b-enc8-50k:
+    projector_embed_dims: 768
+    model: SiT-XL/2
+
+  # REPA + patch2patch
+  sit-xl-linear-dinov2-b-enc8-patch2patch-coeff0.2-50k:
+    projector_embed_dims: 768
+    model: SiT-XL/2
+
+  # REPA + sample2sample
+  sit-xl-linear-dinov2-b-enc8-sample2sample-coeff0.2-50k:
+    projector_embed_dims: 768
+    model: SiT-XL/2
+
+  # patch2patch
+  sit-xl-linear-dinov2-b-enc8-patch2patch-only-coeff0.2-50k:
+    projector_embed_dims: 768
+    model: SiT-XL/2
+
+  # sample2sample
+  sit-xl-linear-dinov2-b-enc8-sample2sample-only-coeff0.2-50k:
+    projector_embed_dims: 768
+    model: SiT-XL/2
