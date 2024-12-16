@@ -53,7 +53,7 @@ class SILoss:
         return alpha_t, sigma_t, d_alpha_t, d_sigma_t
 
     @staticmethod
-    def patch2patch_kernel_alignment_score(feats_A, feats_B):
+    def patch2patch_kernel_alignment_score(feats_A, feats_B, detach_grad=False):
         """
         Compute the patch2patch kernel alignment score between two sets of features.
         Use a copy from the metrics.py to retain the gradient computation.
@@ -64,8 +64,13 @@ class SILoss:
         feats_A = F.normalize(feats_A, dim=-1)
         feats_B = F.normalize(feats_B, dim=-1)
 
+        if detach_grad:
+            feats_A_ = feats_A.clone().detach()
+        else:
+            feats_A_ = feats_A
+
         # compute the kernel matrix --> patch2patch similarity matrix for both A and B # B, N, N
-        kernel_matrix_A = feats_A @ feats_A.transpose(1, 2)
+        kernel_matrix_A = feats_A @ feats_A_.transpose(1, 2)
         kernel_matrix_B = feats_B @ feats_B.transpose(1, 2)
 
         # normalize the rows for both kernel matrices
@@ -82,7 +87,7 @@ class SILoss:
         return alignment_score
 
     @staticmethod
-    def patch2patch_kernel_alignment_score_jsd(feats_A, feats_B, temperature=1.0):
+    def patch2patch_kernel_alignment_score_jsd(feats_A, feats_B, temperature=1.0, detach_grad=False):
         """
         Compute a patch-to-patch kernel alignment score using Jensen-Shannon Divergence.
         For each sample in the batch, we:
@@ -106,8 +111,13 @@ class SILoss:
         feats_A = F.normalize(feats_A, dim=-1)
         feats_B = F.normalize(feats_B, dim=-1)
 
+        if detach_grad:
+            feats_A_ = feats_A.clone().detach()
+        else:
+            feats_A_ = feats_A
+
         # Compute patch-to-patch similarity matrices (B, N, N)
-        kernel_matrix_A = feats_A @ feats_A.transpose(1, 2)
+        kernel_matrix_A = feats_A @ feats_A_.transpose(1, 2)
         kernel_matrix_B = feats_B @ feats_B.transpose(1, 2)
 
         # Convert similarities to probability distributions using softmax
@@ -146,7 +156,7 @@ class SILoss:
         return alignment_score
 
     @staticmethod
-    def sample2sample_kernel_alignment_score(feats_A, feats_B):
+    def sample2sample_kernel_alignment_score(feats_A, feats_B, detach_grad=False):
         """
         Compute the sample2sample kernel alignment score between two sets of features.
         Use a copy from the metrics.py to retain the gradient computation.
@@ -161,8 +171,13 @@ class SILoss:
         feats_A = F.normalize(feats_A, dim=-1)
         feats_B = F.normalize(feats_B, dim=-1)
 
+        if detach_grad:
+            feats_A_ = feats_A.clone().detach()
+        else:
+            feats_A_ = feats_A
+
         # compute the kernel matrix --> sample2sample similarity matrix for both A and B # B, B
-        kernel_matrix_A = feats_A @ feats_A.transpose(0, 1)
+        kernel_matrix_A = feats_A @ feats_A_.transpose(0, 1)
         kernel_matrix_B = feats_B @ feats_B.transpose(0, 1)
 
         # normalize the rows for both kernel matrices
@@ -179,7 +194,7 @@ class SILoss:
         return alignment_score
 
     @staticmethod
-    def sample2sample_kernel_alignment_score_jsd(feats_A, feats_B, temperature=1.0):
+    def sample2sample_kernel_alignment_score_jsd(feats_A, feats_B, temperature=1.0, detach_grad=False):
         """
         Compute a sample-to-sample kernel alignment score using Jensen-Shannon Divergence.
         1. Average feats_A and feats_B across the N dimension to get (B, D) and (B, E).
@@ -205,8 +220,13 @@ class SILoss:
         feats_A = F.normalize(feats_A, dim=-1)
         feats_B = F.normalize(feats_B, dim=-1)
 
+        if detach_grad:
+            feats_A_ = feats_A.clone().detach()
+        else:
+            feats_A_ = feats_A
+
         # Compute similarity matrices (B, B)
-        kernel_matrix_A = feats_A @ feats_A.transpose(0, 1)
+        kernel_matrix_A = feats_A @ feats_A_.transpose(0, 1)
         kernel_matrix_B = feats_B @ feats_B.transpose(0, 1)
 
         # Convert similarities to probability distributions
@@ -295,6 +315,13 @@ class SILoss:
         proj_loss /= (len(zs) * bsz)
 
         # Kernel Alignment across patches
+        if alignment_kwargs["ka_aft_proj"]:
+            # Use the feature after projection -> zs_tilde
+            ka_feats = zs_tilde
+        else:
+            # Use the feature before projection -> fs
+            ka_feats = fs_tilde
+
         if self.loss_type is None:
             # If no kernel_alignment_loss is given, then set it to 0 and move to corresponding device
             kernel_alignment_loss = 0.
@@ -302,24 +329,24 @@ class SILoss:
 
         elif self.loss_type == "patch2patch":
             # NOTE: We should compute kernel alignment with unprojected features only
-            for i, (z, f_tilde) in enumerate(zip(zs, fs_tilde)):
+            for i, (z, ka_feat) in enumerate(zip(zs, ka_feats)):
                 # NOTE: The loss should be the negative of the alignment score (minimize the negative alignment score)
-                kernel_alignment_loss += -self.patch2patch_kernel_alignment_score(z, f_tilde)
+                kernel_alignment_loss += -self.patch2patch_kernel_alignment_score(z, ka_feat, detach_grad=alignment_kwargs["ka_detach_grad"])
 
         elif self.loss_type == "patch2patch_jsd":
             # NOTE: JSD requires the temperature arugmnet
-            for i, (z, f_tilde) in enumerate(zip(zs, fs_tilde)):
-                kernel_alignment_loss += -self.patch2patch_kernel_alignment_score_jsd(z, f_tilde, temperature=alignment_kwargs["p2p_jsd_temp"])
+            for i, (z, ka_feat) in enumerate(zip(zs, ka_feats)):
+                kernel_alignment_loss += -self.patch2patch_kernel_alignment_score_jsd(z, ka_feat, temperature=alignment_kwargs["p2p_jsd_temp"], detach_grad=alignment_kwargs["ka_detach_grad"])
 
         elif self.loss_type == "sample2sample":
             # NOTE We should compute kernel alignment with unprojected features only
-            for i, (z, f_tilde) in enumerate(zip(zs, fs_tilde)):
+            for i, (z, ka_feat) in enumerate(zip(zs, ka_feats)):
                 # NOTE: The loss should be the negative of the alignment score (minimize the negative alignment score)
-                kernel_alignment_loss += -self.sample2sample_kernel_alignment_score(z, f_tilde)
+                kernel_alignment_loss += -self.sample2sample_kernel_alignment_score(z, ka_feat, detach_grad=alignment_kwargs["ka_detach_grad"])
 
         elif self.loss_type == "sample2sample_jsd":
-            for i, (z, f_tilde) in enumerate(zip(zs, fs_tilde)):
-                kernel_alignment_loss += -self.sample2sample_kernel_alignment_score_jsd(z, f_tilde, temperature=alignment_kwargs["s2s_jsd_temp"])
+            for i, (z, ka_feat) in enumerate(zip(zs, ka_feats)):
+                kernel_alignment_loss += -self.sample2sample_kernel_alignment_score_jsd(z, ka_feat, temperature=alignment_kwargs["s2s_jsd_temp"], detach_grad=alignment_kwargs["ka_detach_grad"])
 
         else:
             raise NotImplementedError(f"Loss type {self.loss_type} not implemented")

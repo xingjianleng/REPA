@@ -330,6 +330,8 @@ def main(args):
                 # Whether to compute alignment metrics
                 alignment_kwargs = {
                     "compute_alignment": global_step % args.log_alignment_steps == 0,
+                    "ka_aft_proj": args.ka_aft_proj,
+                    "ka_detach_grad": args.ka_detach_grad,
                     "log_alignment_metrics": args.log_alignment_metrics,
                     "max_score_across_layers": args.max_score_across_layers,
                     "cknna_topk": args.cknna_topk,
@@ -483,6 +485,8 @@ def parse_args(input_args=None):
     # loss
     parser.add_argument("--path-type", type=str, default="linear", choices=["linear", "cosine"])
     parser.add_argument("--loss-type", type=str, default=None, choices=["patch2patch", "sample2sample", "patch2patch_jsd", "sample2sample_jsd"])
+    parser.add_argument("--ka-aft-proj", action="store_true", help="Perform kernel alignment with features after projection.")
+    parser.add_argument("--ka-detach-grad", action="store_true", help="Detach gradients for one matrix for kernel alignment (stop grad for one part of features).")
     parser.add_argument("--prediction", type=str, default="v", choices=["v"]) # currently we only support v-prediction
     parser.add_argument("--cfg-prob", type=float, default=0.1)
     parser.add_argument("--enc-type", type=str, default='dinov2-vit-b')

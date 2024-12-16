@@ -206,7 +206,7 @@ class AlignmentMetrics:
             feats_A_ = feats_A.clone().detach()
         else:
             feats_A_ = feats_A
-        kernel_matrix_A = feats_A @ feats_A.transpose(0, 1)
+        kernel_matrix_A = feats_A @ feats_A_.transpose(0, 1)
         kernel_matrix_B = feats_B @ feats_B.transpose(0, 1)
 
         # normalize the rows for both kernel matrices
@@ -292,7 +292,7 @@ class AlignmentMetrics:
             feats_A_ = feats_A.clone().detach()
         else:
             feats_A_ = feats_A
-        kernel_matrix_A = feats_A @ feats_A.transpose(0, 1)
+        kernel_matrix_A = feats_A @ feats_A_.transpose(0, 1)
         kernel_matrix_B = feats_B @ feats_B.transpose(0, 1)
 
         # Convert similarities to probability distributions
@@ -425,7 +425,7 @@ class AlignmentMetrics:
             feats_A_ = feats_A.clone().detach()
         else:
             feats_A_ = feats_A
-        kernel_matrix_A = feats_A @ feats_A.transpose(1, 2)
+        kernel_matrix_A = feats_A @ feats_A_.transpose(1, 2)
         kernel_matrix_B = feats_B @ feats_B.transpose(1, 2)
 
         # Convert similarities to probability distributions using softmax
