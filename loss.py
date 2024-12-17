@@ -87,7 +87,7 @@ class SILoss:
         return alignment_score
 
     @staticmethod
-    def patch2patch_kernel_alignment_score_jsd(feats_A, feats_B, temperature=1.0, detach_grad=False):
+    def patch2patch_kernel_alignment_score_jsd(feats_A, feats_B, src_temp=1.0, tgt_temp=1.0, detach_grad=False):
         """
         Compute a patch-to-patch kernel alignment score using Jensen-Shannon Divergence.
         For each sample in the batch, we:
@@ -102,7 +102,8 @@ class SILoss:
         Args:
             feats_A: Tensor of shape (B, N, D)
             feats_B: Tensor of shape (B, N, E)
-            temperature: float, temperature for softmax
+            src_temp: float, temperature for softmax applied to feats_A
+            tgt_temp: float, temperature for softmax applied to feats_B
 
         Returns:
             alignment_score: A scalar tensor representing the mean alignment score across the batch and all rows.
@@ -121,8 +122,8 @@ class SILoss:
         kernel_matrix_B = feats_B @ feats_B.transpose(1, 2)
 
         # Convert similarities to probability distributions using softmax
-        P = F.softmax(kernel_matrix_A / temperature, dim=-1)  # (B, N, N)
-        Q = F.softmax(kernel_matrix_B / temperature, dim=-1)  # (B, N, N)
+        P = F.softmax(kernel_matrix_A / src_temp, dim=-1)  # (B, N, N)
+        Q = F.softmax(kernel_matrix_B / tgt_temp, dim=-1)  # (B, N, N)
 
         # Compute the mixture distribution M = 0.5*(P+Q)
         M = 0.5 * (P + Q)
@@ -194,7 +195,7 @@ class SILoss:
         return alignment_score
 
     @staticmethod
-    def sample2sample_kernel_alignment_score_jsd(feats_A, feats_B, temperature=1.0, detach_grad=False):
+    def sample2sample_kernel_alignment_score_jsd(feats_A, feats_B, src_temp=1.0, tgt_temp=1.0, detach_grad=False):
         """
         Compute a sample-to-sample kernel alignment score using Jensen-Shannon Divergence.
         1. Average feats_A and feats_B across the N dimension to get (B, D) and (B, E).
@@ -207,7 +208,8 @@ class SILoss:
         Args:
             feats_A: (B, N, D)
             feats_B: (B, N, E)
-            temperature: float, temperature for softmax
+            src_temp: float, temperature for softmax applied to feats_A
+            tgt_temp: float, temperature for softmax applied to feats_B
 
         Returns:
             alignment_score: a scalar float value.
@@ -230,8 +232,8 @@ class SILoss:
         kernel_matrix_B = feats_B @ feats_B.transpose(0, 1)
 
         # Convert similarities to probability distributions
-        P = F.softmax(kernel_matrix_A / temperature, dim=-1)  # (B, B)
-        Q = F.softmax(kernel_matrix_B / temperature, dim=-1)  # (B, B)
+        P = F.softmax(kernel_matrix_A / src_temp, dim=-1)  # (B, B)
+        Q = F.softmax(kernel_matrix_B / tgt_temp, dim=-1)  # (B, B)
         M = 0.5 * (P + Q)  # Mixture distribution
 
         eps = 1e-10
@@ -336,7 +338,13 @@ class SILoss:
             # NOTE: JSD requires the temperature arugmnet
             for fs_tilde in fs_tilde_layers:
                 for i, (z, f_tilde) in enumerate(zip(zs, fs_tilde)):
-                    kernel_alignment_loss += -self.patch2patch_kernel_alignment_score_jsd(z, f_tilde, temperature=alignment_kwargs["p2p_jsd_temp"], detach_grad=alignment_kwargs["ka_detach_grad"])
+                    kernel_alignment_loss += -self.patch2patch_kernel_alignment_score_jsd(
+                        z,
+                        f_tilde,
+                        src_temp=alignment_kwargs["p2p_jsd_src_temp"],
+                        tgt_temp=alignment_kwargs["p2p_jsd_tgt_temp"],
+                        detach_grad=alignment_kwargs["ka_detach_grad"],
+                    )
 
         elif self.loss_type == "sample2sample":
             # NOTE We should compute kernel alignment with unprojected features only
@@ -348,7 +356,13 @@ class SILoss:
         elif self.loss_type == "sample2sample_jsd":
             for fs_tilde in fs_tilde_layers:
                 for i, (z, f_tilde) in enumerate(zip(zs, fs_tilde)):
-                    kernel_alignment_loss += -self.sample2sample_kernel_alignment_score_jsd(z, f_tilde, temperature=alignment_kwargs["s2s_jsd_temp"], detach_grad=alignment_kwargs["ka_detach_grad"])
+                    kernel_alignment_loss += -self.sample2sample_kernel_alignment_score_jsd(
+                        z,
+                        f_tilde,
+                        src_temp=alignment_kwargs["s2s_jsd_temp"],
+                        tgt_temp=alignment_kwargs["s2s_jsd_temp"],
+                        detach_grad=alignment_kwargs["ka_detach_grad"]
+                    )
 
         else:
             raise NotImplementedError(f"Loss type {self.loss_type} not implemented")
@@ -384,11 +398,11 @@ class SILoss:
                                     # cknna needs topk
                                     measure_kwargs["topk"] = alignment_kwargs["cknna_topk"]
                                 elif metric == "patch2patch_kernel_alignment_score_jsd":
-                                    # jsd needs temperature
-                                    measure_kwargs["temperature"] = alignment_kwargs["p2p_jsd_temp"]
+                                    # jsd needs temperature, use the source temperature for logging
+                                    measure_kwargs["temperature"] = alignment_kwargs["p2p_jsd_src_temp"]
                                 elif metric == "sample2sample_kernel_alignment_score_jsd":
-                                    # jsd needs temperature
-                                    measure_kwargs["temperature"] = alignment_kwargs["s2s_jsd_temp"]
+                                    # jsd needs temperature, use the source temperature for logging
+                                    measure_kwargs["temperature"] = alignment_kwargs["s2s_jsd_src_temp"]
 
                                 curr_score = AlignmentMetrics.measure(
                                     metric=metric,
@@ -427,11 +441,11 @@ class SILoss:
                                 # cknna needs topk
                                 measure_kwargs["topk"] = alignment_kwargs["cknna_topk"]
                             elif metric == "patch2patch_kernel_alignment_score_jsd":
-                                # jsd needs temperature
-                                measure_kwargs["temperature"] = alignment_kwargs["p2p_jsd_temp"]
+                                # jsd needs temperature, use the source temperature for logging
+                                measure_kwargs["temperature"] = alignment_kwargs["p2p_jsd_src_temp"]
                             elif metric == "sample2sample_kernel_alignment_score_jsd":
-                                # jsd needs temperature
-                                measure_kwargs["temperature"] = alignment_kwargs["s2s_jsd_temp"]
+                                # jsd needs temperature, use the source temperature for logging
+                                measure_kwargs["temperature"] = alignment_kwargs["s2s_jsd_src_temp"]
 
                             curr_score = AlignmentMetrics.measure(
                                 metric=metric,

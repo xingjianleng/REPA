@@ -328,7 +328,7 @@ def main(args):
 
             with accelerator.accumulate(model):
                 model_kwargs = dict(y=labels)
-                # Whether to compute alignment metrics
+                # define alignment kwargs here
                 alignment_kwargs = {
                     "compute_alignment": global_step % args.log_alignment_steps == 0,
                     "ka_aft_proj": args.ka_aft_proj,
@@ -336,8 +336,10 @@ def main(args):
                     "log_alignment_metrics": args.log_alignment_metrics,
                     "max_score_across_layers": args.max_score_across_layers,
                     "cknna_topk": args.cknna_topk,
-                    "p2p_jsd_temp": args.p2p_jsd_temp,
-                    "s2s_jsd_temp": args.s2s_jsd_temp,
+                    "p2p_jsd_src_temp": args.p2p_jsd_src_temp,
+                    "p2p_jsd_tgt_temp": args.p2p_jsd_tgt_temp,
+                    "s2s_jsd_src_temp": args.s2s_jsd_src_temp,
+                    "s2s_jsd_tgt_temp": args.s2s_jsd_tgt_temp,
                 }
                 loss, proj_loss, ka_loss, alignment_scores = loss_fn(
                     model, x, model_kwargs, zs=zs,
@@ -470,8 +472,11 @@ def parse_args(input_args=None):
                                  "patch2patch_kernel_alignment_score_jsd", "sample2sample_kernel_alignment_score_jsd"])
     parser.add_argument("--max-score-across-layers", action="store_true")
     parser.add_argument("--cknna-topk", type=int, default=10)
-    parser.add_argument("--p2p-jsd-temp", type=float, default=0.1)
-    parser.add_argument("--s2s-jsd-temp", type=float, default=0.2)
+    # TODO: Later change these params into `temp_init`, `temp_end`, and `temp_schedule`
+    parser.add_argument("--p2p-jsd-src-temp", type=float, default=0.1)
+    parser.add_argument("--p2p-jsd-tgt-temp", type=float, default=0.1)
+    parser.add_argument("--s2s-jsd-src-temp", type=float, default=0.2)
+    parser.add_argument("--s2s-jsd-tgt-temp", type=float, default=0.2)
     parser.add_argument("--gradient-accumulation-steps", type=int, default=1)
     parser.add_argument("--learning-rate", type=float, default=1e-4)
     parser.add_argument("--adam-beta1", type=float, default=0.9, help="The beta1 parameter for the Adam optimizer.")
