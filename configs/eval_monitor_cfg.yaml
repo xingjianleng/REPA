@@ -83,7 +83,7 @@ monitored_experiments:
   # REPA + sample2sample_jsd + detach
   sit-xl-linear-dinov2-b-enc8-sample2sample-jsd-detach-coeff0.2-50k:
     projector_embed_dims: 768
-    model: SiT-XL/2t
+    model: SiT-XL/2
 
   # baseline
   sit-xl-base-50k:
