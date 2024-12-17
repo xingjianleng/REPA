@@ -352,7 +352,7 @@ class SILoss:
 
         else:
             raise NotImplementedError(f"Loss type {self.loss_type} not implemented")
-        kernel_alignment_loss /= len(zs)
+        kernel_alignment_loss /= len(zs) * len(fs_tilde_layers)
 
         alignment_scores = None
 
