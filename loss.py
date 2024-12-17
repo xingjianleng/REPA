@@ -359,8 +359,8 @@ class SILoss:
                     kernel_alignment_loss += -self.sample2sample_kernel_alignment_score_jsd(
                         z,
                         f_tilde,
-                        src_temp=alignment_kwargs["s2s_jsd_temp"],
-                        tgt_temp=alignment_kwargs["s2s_jsd_temp"],
+                        src_temp=alignment_kwargs["s2s_jsd_src_temp"],
+                        tgt_temp=alignment_kwargs["s2s_jsd_tgt_temp"],
                         detach_grad=alignment_kwargs["ka_detach_grad"]
                     )
 
