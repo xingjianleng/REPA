@@ -53,25 +53,39 @@ class SILoss:
         return alpha_t, sigma_t, d_alpha_t, d_sigma_t
 
     @staticmethod
-    def patch2patch_kernel_alignment_score(feats_A, feats_B, detach_grad=False):
+    def patch2patch_kernel_alignment_score(feats_A, feats_B, feats_A_=None, feats_B_=None, detach_grad=False):
         """
         Compute the patch2patch kernel alignment score between two sets of features.
         Use a copy from the metrics.py to retain the gradient computation.
         feats_A: B, N, D
         feats_B: B, N, E # can be different from dimension
+        feats_A_: (B x n_gpus, D) (if provided)
+        feats_B_: (B x n_gpus, E) (if provided)
+        detach_grad: bool, detach the gradient of the part of the feature matrix
         """
         # normalize the features along the last dimension
         feats_A = F.normalize(feats_A, dim=-1)
         feats_B = F.normalize(feats_B, dim=-1)
 
-        if detach_grad:
-            feats_A_ = feats_A.clone().detach()
+        if feats_A_ is None:
+            if detach_grad:
+                feats_A_ = feats_A.clone().detach()
+            else:
+                feats_A_ = feats_A
         else:
-            feats_A_ = feats_A
+            feats_A_ = F.normalize(feats_A_, dim=-1)
+
+        if feats_B_ is None:
+            if detach_grad:
+                feats_B_ = feats_B.clone().detach()
+            else:
+                feats_B_ = feats_B
+        else:
+            feats_B_ = F.normalize(feats_B_, dim=-1)
 
         # compute the kernel matrix --> patch2patch similarity matrix for both A and B # B, N, N
         kernel_matrix_A = feats_A @ feats_A_.transpose(1, 2)
-        kernel_matrix_B = feats_B @ feats_B.transpose(1, 2)
+        kernel_matrix_B = feats_B @ feats_B_.transpose(1, 2)
 
         # normalize the rows for both kernel matrices
         kernel_matrix_A = F.normalize(kernel_matrix_A, dim=-1)
@@ -87,7 +101,7 @@ class SILoss:
         return alignment_score
 
     @staticmethod
-    def patch2patch_kernel_alignment_score_jsd(feats_A, feats_B, src_temp=1.0, tgt_temp=1.0, detach_grad=False):
+    def patch2patch_kernel_alignment_score_jsd(feats_A, feats_B, feats_A_=None, feats_B_=None, src_temp=1.0, tgt_temp=1.0, detach_grad=False):
         """
         Compute a patch-to-patch kernel alignment score using Jensen-Shannon Divergence.
         For each sample in the batch, we:
@@ -102,8 +116,11 @@ class SILoss:
         Args:
             feats_A: Tensor of shape (B, N, D)
             feats_B: Tensor of shape (B, N, E)
+            feats_A_: (B x n_gpus, D) (if provided)
+            feats_B_: (B x n_gpus, E) (if provided)
             src_temp: float, temperature for softmax applied to feats_A
             tgt_temp: float, temperature for softmax applied to feats_B
+            detach_grad: bool, detach the gradient of the part of the feature matrix
 
         Returns:
             alignment_score: A scalar tensor representing the mean alignment score across the batch and all rows.
@@ -112,14 +129,25 @@ class SILoss:
         feats_A = F.normalize(feats_A, dim=-1)
         feats_B = F.normalize(feats_B, dim=-1)
 
-        if detach_grad:
-            feats_A_ = feats_A.clone().detach()
+        if feats_A_ is None:
+            if detach_grad:
+                feats_A_ = feats_A.clone().detach()
+            else:
+                feats_A_ = feats_A
         else:
-            feats_A_ = feats_A
+            feats_A_ = F.normalize(feats_A_, dim=-1)
+
+        if feats_B_ is None:
+            if detach_grad:
+                feats_B_ = feats_B.clone().detach()
+            else:
+                feats_B_ = feats_B
+        else:
+            feats_B_ = F.normalize(feats_B_, dim=-1)
 
         # Compute patch-to-patch similarity matrices (B, N, N)
         kernel_matrix_A = feats_A @ feats_A_.transpose(1, 2)
-        kernel_matrix_B = feats_B @ feats_B.transpose(1, 2)
+        kernel_matrix_B = feats_B @ feats_B_.transpose(1, 2)
 
         # Convert similarities to probability distributions using softmax
         P = F.softmax(kernel_matrix_A / src_temp, dim=-1)  # (B, N, N)
@@ -157,30 +185,43 @@ class SILoss:
         return alignment_score
 
     @staticmethod
-    def sample2sample_kernel_alignment_score(feats_A, feats_B, detach_grad=False):
+    def sample2sample_kernel_alignment_score(feats_A, feats_B, feats_A_=None, feats_B_=None, detach_grad=False):
         """
         Compute the sample2sample kernel alignment score between two sets of features.
         Use a copy from the metrics.py to retain the gradient computation.
-        feats_A: B, D
-        feats_B: B, E
+        feats_A: B, N, D
+        feats_B: B, N, E
+        feats_A_: (B x n_gpus, D) (if provided)
+        feats_B_: (B x n_gpus, E) (if provided)
+        detach_grad: bool, detach the gradient of the part of the feature matrix
         """
-        # NOTE: We changed the shape of the input outside this function
         # take the mean across last dimension # B, D
-        # feats_A = feats_A.mean(dim=-2)
-        # feats_B = feats_B.mean(dim=-2)
+        feats_A = feats_A.mean(dim=-2)
+        feats_B = feats_B.mean(dim=-2)
 
         # normalize the features along the last dimension
         feats_A = F.normalize(feats_A, dim=-1)
         feats_B = F.normalize(feats_B, dim=-1)
 
-        if detach_grad:
-            feats_A_ = feats_A.clone().detach()
+        if feats_A_ is None:
+            if detach_grad:
+                feats_A_ = feats_A.clone().detach()
+            else:
+                feats_A_ = feats_A
         else:
-            feats_A_ = feats_A
+            feats_A_ = F.normalize(feats_A_, dim=-1)
+
+        if feats_B_ is None:
+            if detach_grad:
+                feats_B_ = feats_B.clone().detach()
+            else:
+                feats_B_ = feats_B
+        else:
+            feats_B_ = F.normalize(feats_B_, dim=-1)
 
         # compute the kernel matrix --> sample2sample similarity matrix for both A and B # B, B
         kernel_matrix_A = feats_A @ feats_A_.transpose(0, 1)
-        kernel_matrix_B = feats_B @ feats_B.transpose(0, 1)
+        kernel_matrix_B = feats_B @ feats_B_.transpose(0, 1)
 
         # normalize the rows for both kernel matrices
         kernel_matrix_A = F.normalize(kernel_matrix_A, dim=-1)
@@ -196,7 +237,7 @@ class SILoss:
         return alignment_score
 
     @staticmethod
-    def sample2sample_kernel_alignment_score_jsd(feats_A, feats_B, src_temp=1.0, tgt_temp=1.0, detach_grad=False):
+    def sample2sample_kernel_alignment_score_jsd(feats_A, feats_B, feats_A_=None, feats_B_=None, src_temp=1.0, tgt_temp=1.0, detach_grad=False):
         """
         Compute a sample-to-sample kernel alignment score using Jensen-Shannon Divergence.
         1. Average feats_A and feats_B across the N dimension to get (B, D) and (B, E).
@@ -207,31 +248,45 @@ class SILoss:
         6. Convert JSD to an alignment score = 1 - JSD_mean, return as a scalar.
 
         Args:
-            feats_A: (B, D)
-            feats_B: (B, E)
+            feats_A: (B, N, D)
+            feats_B: (B, N, E)
+            feats_A_: (B x n_gpus, D) (if provided)
+            feats_B_: (B x n_gpus, E) (if provided)
             src_temp: float, temperature for softmax applied to feats_A
             tgt_temp: float, temperature for softmax applied to feats_B
+            detach_grad: bool, detach the gradient of the part of the feature matrix
 
         Returns:
             alignment_score: a scalar float value.
         """
-        # NOTE: We changed the shape of the input outside this function
         # Average features across the N dimension: (B, N, D) -> (B, D)
-        # feats_A = feats_A.mean(dim=1)
-        # feats_B = feats_B.mean(dim=1)
+        feats_A = feats_A.mean(dim=1)
+        feats_B = feats_B.mean(dim=1)
 
         # Normalize the features
         feats_A = F.normalize(feats_A, dim=-1)
         feats_B = F.normalize(feats_B, dim=-1)
 
-        if detach_grad:
-            feats_A_ = feats_A.clone().detach()
+        if feats_A_ is None:
+            if detach_grad:
+                feats_A_ = feats_A.clone().detach()
+            else:
+                feats_A_ = feats_A
         else:
-            feats_A_ = feats_A
+            feats_A_ = F.normalize(feats_A_, dim=-1)
+
+        if feats_B_ is None:
+            if detach_grad:
+                feats_B_ = feats_B.clone().detach()
+            else:
+                feats_B_ = feats_B
+        else:
+            feats_B_ = F.normalize(feats_B_, dim=-1)
 
         # Compute similarity matrices (B, B)
         kernel_matrix_A = feats_A @ feats_A_.transpose(0, 1)
-        kernel_matrix_B = feats_B @ feats_B.transpose(0, 1)
+        kernel_matrix_B = feats_B @ feats_B_.transpose(0, 1)
+        # print(kernel_matrix_A.shape, kernel_matrix_B.shape)
 
         # Convert similarities to probability distributions
         P = F.softmax(kernel_matrix_A / src_temp, dim=-1)  # (B, B)
@@ -246,7 +301,7 @@ class SILoss:
         # Compute KL divergences using F.kl_div
         # KL(P||M) = sum(P * log(P/M)) over dim=-1
         # Using F.kl_div: input=logM, target=P
-        logM = M_clamped.log()
+        # logM = M_clamped.log()
 
         # Compute KL(P||M) and KL(Q||M) row-wise
         # KL(P||M) = sum_over_j P_j * log(P_j/M_j)
@@ -267,6 +322,16 @@ class SILoss:
         # Alignment score: 1 - JSD
         alignment_score = 1.0 - JSD_mean
         return alignment_score
+
+    def gather_dim(self, tensor, dim=0):
+        """
+        Gather the tensor across the specified dim dimension.
+        """
+        assert dim < tensor.dim()
+        tensor_dim_first = tensor.permute(dim, *list(range(dim)), *list(range(dim+1, tensor.dim())))
+        tensor_gathered = self.accelerator.gather(tensor_dim_first)
+        tensor_gathered = tensor_gathered.permute(*list(range(1, dim+1)), 0, *list(range(dim+1, tensor_gathered.dim())))
+        return tensor_gathered
 
     def __call__(self, model, images, model_kwargs=None, zs=None, alignment_kwargs=None):
         if model_kwargs == None:
@@ -351,47 +416,41 @@ class SILoss:
         elif "sample2sample" in self.loss_type:
             # For sample2sample, we need to gather all features to compute the alignment score
 
-            # Get the current process id for indexing which part of data is associated with the current process
-            curr_process_id = self.accelerator.process_index
-
-            # Get a copy of detached fs_tilde and gather, L -> multiple alignment layers
-            fs_tilde_T = fs_tilde_T = torch.stack(
-                [torch.stack(fs_tilde_layer) for fs_tilde_layer in fs_tilde_layers]).permute(2, 0, 1, 3, 4)  # [B, L, num_projs, N, D]
-            fs_tilde_T = fs_tilde_T.mean(dim=2)  # [B, L, num_proj, D]
-            fs_tilde_detached_T = fs_tilde_T.detach()  # [B, L, num_projs, D]
-            fs_tilde_gathered = self.accelerator.gather(fs_tilde_detached_T)  # [B x n_gpus, L, num_projs, D]
-
-            # Tricks: subtract the detached current batch feature and add it back w/ grad
-            bs = fs_tilde_detached_T.shape[0]
-            start_idx = curr_process_id * bs
-            end_idx = (curr_process_id + 1) * bs
-            fs_tilde_gathered[start_idx:end_idx] -= fs_tilde_detached_T  # [B x n_gpus, L, num_projs, D]
-            fs_tilde_gathered[start_idx:end_idx] += fs_tilde_T  # [B x n_gpus, L, num_projs, D]
-            fs_tilde_gathered = fs_tilde_gathered.permute(1, 2, 0, 3)  # [L, num_projs, B x n_gpus, D]
+            # Get a copy of detached fs_tilde and gather, L -> multiple alignment layers, P -> num_projectors
+            fs_tilde_stacked = torch.stack([torch.stack(fs_tilde_layer) for fs_tilde_layer in fs_tilde_layers]).detach()  # [L, P, B, N, D]
+            fs_tilde_mean_reduced = fs_tilde_stacked.mean(dim=3)  # [L, P, B, D]
+            fs_tilde_gathered = self.gather_dim(fs_tilde_mean_reduced, dim=2)  # [L, P, B x n_gpus, D]
 
             # Get a copy of projector (e.g. DINOv2) features (already detached)
-            zs_mean_reduced = torch.stack(zs)  # [n_projs, B, N, D]
-            zs_mean_reduced = zs_mean_reduced.mean(dim=2)  # [n_projs, B, D]
-            zs_mean_reduced = zs_mean_reduced.permute(1, 0, 2)  # [B, n_projs, D]
-            zs_mean_reduced = self.accelerator.gather(zs_mean_reduced)  # [B x n_gpus, n_projs, D]
-            zs_mean_reduced = zs_mean_reduced.permute(1, 0, 2)  # [n_projs, B x n_gpus, D]
+            zs_stacked = torch.stack(zs)  # [n_projs, B, N, D]
+            zs_mean_reduced = zs_stacked.mean(dim=2)  # [n_projs, B, D]
+            zs_gathered = self.gather_dim(zs_mean_reduced, dim=1)  # [n_projs, B x n_gpus, D]
 
             if self.loss_type == "sample2sample":
                 # NOTE We should compute kernel alignment with unprojected features only
-                for fs_tilde in fs_tilde_gathered:
-                    for i, (z, f_tilde) in enumerate(zip(zs_mean_reduced, fs_tilde)):
+                for fs_tilde, fs_tilde_g in zip(fs_tilde_layers, fs_tilde_gathered):
+                    for i, (z, z_g, f_tilde, f_tilde_g) in enumerate(zip(zs, zs_gathered, fs_tilde, fs_tilde_g)):
                         # NOTE: The loss should be the negative of the alignment score (minimize the negative alignment score)
-                        kernel_alignment_loss += -self.sample2sample_kernel_alignment_score(z, f_tilde, detach_grad=alignment_kwargs["ka_detach_grad"])
+                        kernel_alignment_loss += -self.sample2sample_kernel_alignment_score(
+                            feats_A=z,  # [B, N, D]
+                            feats_B=f_tilde,  # [B, N, D]
+                            feats_A_=z_g,  # [B x n_gpus, D]
+                            feats_B_=f_tilde_g,  # [B x n_gpus, D]
+                            detach_grad=alignment_kwargs["ka_detach_grad"],
+                        )
 
             elif self.loss_type == "sample2sample_jsd":
-                for fs_tilde in fs_tilde_gathered:
-                    for i, (z, f_tilde) in enumerate(zip(zs_mean_reduced, fs_tilde)):
+                for fs_tilde, fs_tilde_g in zip(fs_tilde_layers, fs_tilde_gathered):
+                    for i, (z, z_g, f_tilde, f_tilde_g) in enumerate(zip(zs, zs_gathered, fs_tilde, fs_tilde_g)):
+                        # print(z.shape, f_tilde.shape, z_g.shape, f_tilde_g.shape)
                         kernel_alignment_loss += -self.sample2sample_kernel_alignment_score_jsd(
-                            z,
-                            f_tilde,
+                            feats_A=z,  # [B, N, D]
+                            feats_B=f_tilde, # [B, N, D]
+                            feats_A_=z_g,       # [B x n_gpus, D]
+                            feats_B_=f_tilde_g,  # [B x n_gpus, D]
                             src_temp=alignment_kwargs["s2s_jsd_src_temp"],
                             tgt_temp=alignment_kwargs["s2s_jsd_tgt_temp"],
-                            detach_grad=alignment_kwargs["ka_detach_grad"]
+                            detach_grad=alignment_kwargs["ka_detach_grad"],
                         )
 
             else:
