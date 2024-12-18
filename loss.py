@@ -161,12 +161,13 @@ class SILoss:
         """
         Compute the sample2sample kernel alignment score between two sets of features.
         Use a copy from the metrics.py to retain the gradient computation.
-        feats_A: B, N, D
-        feats_B: B, N, E
+        feats_A: B, D
+        feats_B: B, E
         """
+        # NOTE: We changed the shape of the input outside this function
         # take the mean across last dimension # B, D
-        feats_A = feats_A.mean(dim=-2)
-        feats_B = feats_B.mean(dim=-2)
+        # feats_A = feats_A.mean(dim=-2)
+        # feats_B = feats_B.mean(dim=-2)
 
         # normalize the features along the last dimension
         feats_A = F.normalize(feats_A, dim=-1)
@@ -206,17 +207,18 @@ class SILoss:
         6. Convert JSD to an alignment score = 1 - JSD_mean, return as a scalar.
 
         Args:
-            feats_A: (B, N, D)
-            feats_B: (B, N, E)
+            feats_A: (B, D)
+            feats_B: (B, E)
             src_temp: float, temperature for softmax applied to feats_A
             tgt_temp: float, temperature for softmax applied to feats_B
 
         Returns:
             alignment_score: a scalar float value.
         """
+        # NOTE: We changed the shape of the input outside this function
         # Average features across the N dimension: (B, N, D) -> (B, D)
-        feats_A = feats_A.mean(dim=1)
-        feats_B = feats_B.mean(dim=1)
+        # feats_A = feats_A.mean(dim=1)
+        # feats_B = feats_B.mean(dim=1)
 
         # Normalize the features
         feats_A = F.normalize(feats_A, dim=-1)
@@ -346,26 +348,59 @@ class SILoss:
                         detach_grad=alignment_kwargs["ka_detach_grad"],
                     )
 
-        elif self.loss_type == "sample2sample":
-            # NOTE We should compute kernel alignment with unprojected features only
-            for fs_tilde in fs_tilde_layers:
-                for i, (z, f_tilde) in enumerate(zip(zs, fs_tilde)):
-                    # NOTE: The loss should be the negative of the alignment score (minimize the negative alignment score)
-                    kernel_alignment_loss += -self.sample2sample_kernel_alignment_score(z, f_tilde, detach_grad=alignment_kwargs["ka_detach_grad"])
+        elif "sample2sample" in self.loss_type:
+            # For sample2sample, we need to gather all features to compute the alignment score
 
-        elif self.loss_type == "sample2sample_jsd":
-            for fs_tilde in fs_tilde_layers:
-                for i, (z, f_tilde) in enumerate(zip(zs, fs_tilde)):
-                    kernel_alignment_loss += -self.sample2sample_kernel_alignment_score_jsd(
-                        z,
-                        f_tilde,
-                        src_temp=alignment_kwargs["s2s_jsd_src_temp"],
-                        tgt_temp=alignment_kwargs["s2s_jsd_tgt_temp"],
-                        detach_grad=alignment_kwargs["ka_detach_grad"]
-                    )
+            # Get the current process id for indexing which part of data is associated with the current process
+            curr_process_id = self.accelerator.process_index
+
+            # Get a copy of detached fs_tilde and gather, L -> multiple alignment layers
+            fs_tilde_T = fs_tilde_T = torch.stack(
+                [torch.stack(fs_tilde_layer) for fs_tilde_layer in fs_tilde_layers]).permute(2, 0, 1, 3, 4)  # [B, L, num_projs, N, D]
+            fs_tilde_T = fs_tilde_T.mean(dim=2)  # [B, L, num_proj, D]
+            fs_tilde_detached_T = fs_tilde_T.detach()  # [B, L, num_projs, D]
+            fs_tilde_gathered = self.accelerator.gather(fs_tilde_detached_T)  # [B x n_gpus, L, num_projs, D]
+
+            # Tricks: subtract the detached current batch feature and add it back w/ grad
+            bs = fs_tilde_detached_T.shape[0]
+            start_idx = curr_process_id * bs
+            end_idx = (curr_process_id + 1) * bs
+            fs_tilde_gathered[start_idx:end_idx] -= fs_tilde_detached_T  # [B x n_gpus, L, num_projs, D]
+            fs_tilde_gathered[start_idx:end_idx] += fs_tilde_T  # [B x n_gpus, L, num_projs, D]
+            fs_tilde_gathered = fs_tilde_gathered.permute(1, 2, 0, 3)  # [L, num_projs, B x n_gpus, D]
+
+            # Get a copy of projector (e.g. DINOv2) features (already detached)
+            zs_mean_reduced = torch.stack(zs)  # [n_projs, B, N, D]
+            zs_mean_reduced = zs_mean_reduced.mean(dim=2)  # [n_projs, B, D]
+            zs_mean_reduced = zs_mean_reduced.permute(1, 0, 2)  # [B, n_projs, D]
+            zs_mean_reduced = self.accelerator.gather(zs_mean_reduced)  # [B x n_gpus, n_projs, D]
+            zs_mean_reduced = zs_mean_reduced.permute(1, 0, 2)  # [n_projs, B x n_gpus, D]
+
+            if self.loss_type == "sample2sample":
+                # NOTE We should compute kernel alignment with unprojected features only
+                for fs_tilde in fs_tilde_gathered:
+                    for i, (z, f_tilde) in enumerate(zip(zs_mean_reduced, fs_tilde)):
+                        # NOTE: The loss should be the negative of the alignment score (minimize the negative alignment score)
+                        kernel_alignment_loss += -self.sample2sample_kernel_alignment_score(z, f_tilde, detach_grad=alignment_kwargs["ka_detach_grad"])
+
+            elif self.loss_type == "sample2sample_jsd":
+                for fs_tilde in fs_tilde_gathered:
+                    for i, (z, f_tilde) in enumerate(zip(zs_mean_reduced, fs_tilde)):
+                        kernel_alignment_loss += -self.sample2sample_kernel_alignment_score_jsd(
+                            z,
+                            f_tilde,
+                            src_temp=alignment_kwargs["s2s_jsd_src_temp"],
+                            tgt_temp=alignment_kwargs["s2s_jsd_tgt_temp"],
+                            detach_grad=alignment_kwargs["ka_detach_grad"]
+                        )
+
+            else:
+                raise NotImplementedError(f"Loss type {self.loss_type} not implemented")
 
         else:
             raise NotImplementedError(f"Loss type {self.loss_type} not implemented")
+
+        # Normalize the kernel alignment loss based on the num_projs and num_align_layers
         kernel_alignment_loss /= len(zs) * len(fs_tilde_layers)
 
         alignment_scores = None
@@ -404,6 +439,9 @@ class SILoss:
                                     # jsd needs temperature, use the source temperature for logging
                                     measure_kwargs["temperature"] = alignment_kwargs["s2s_jsd_src_temp"]
 
+                                # FIXME: for now we have some problems with the sample2sample alignment score computation
+                                #        we are not gathering all features to compute sample2sample self-correlation for logging, which means we are
+                                #        compute the correlation within the batch on the current GPU, but we leave it here for now
                                 curr_score = AlignmentMetrics.measure(
                                     metric=metric,
                                     feats_A=feats_A,
