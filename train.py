@@ -199,6 +199,7 @@ def main(args):
         latents_bias=latents_bias,
         weighting=args.weighting,
         loss_type=args.loss_type,
+        gather_feats=args.gather_feats,
     )
     if accelerator.is_main_process:
         logger.info(f"SiT Parameters: {sum(p.numel() for p in model.parameters()):,}")
@@ -497,6 +498,7 @@ def parse_args(input_args=None):
     parser.add_argument("--num-workers", type=int, default=4)
 
     # loss
+    parser.add_argument("--gather-feats", action='store_true', help="Gather features across GPUs for sample2sample alignment loss computation")
     parser.add_argument("--path-type", type=str, default="linear", choices=["linear", "cosine"])
     parser.add_argument("--loss-type", type=str, default=None, choices=["patch2patch", "sample2sample", "patch2patch_jsd", "sample2sample_jsd"])
     parser.add_argument("--ka-aft-proj", action="store_true", help="Perform kernel alignment with features after projection.")
