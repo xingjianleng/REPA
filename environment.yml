@@ -48,6 +48,7 @@ dependencies:
       - defusedxml==0.7.1
       - diffusers==0.31.0
       - docker-pycreds==0.4.0
+      - einops==0.8.0
       - exceptiongroup==1.2.2
       - executing==2.1.0
       - fastjsonschema==2.21.0
@@ -162,6 +163,7 @@ dependencies:
       - tomli==2.2.1
       - torch==2.3.1
       - torchaudio==2.3.1
+      - torchdiffeq==0.2.5
       - torchvision==0.18.1
       - tornado==6.4.2
       - tqdm==4.67.1
@@ -180,4 +182,4 @@ dependencies:
       - websocket-client==1.8.0
       - widgetsnbextension==4.0.13
       - zipp==3.21.0
-prefix: /mnt/SSD/lengx/miniconda3/envs/repa
+prefix: /scratch3/zha439/env/repa
