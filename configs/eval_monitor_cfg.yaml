@@ -22,12 +22,12 @@ monitored_experiments:
     model: SiT-XL/2
 
   # patch2patch
-  sit-xl-linear-dinov2-b-enc8-patch2patch-only-coeff0.2-50k:
+  sit-xl-linear-dinov2-b-enc8-patch2patch-0.2-0.2-only-coeff0.2-50k:
     projector_embed_dims: 768
     model: SiT-XL/2
 
   # sample2sample
-  sit-xl-linear-dinov2-b-enc8-sample2sample-only-coeff0.2-50k:
+  sit-xl-linear-dinov2-b-enc8-sample2sample-0.2-0.2-only-coeff0.2-50k:
     projector_embed_dims: 768
     model: SiT-XL/2
 
@@ -37,7 +37,7 @@ monitored_experiments:
     model: SiT-XL/2
 
   # patch2patch_jsd
-  sit-xl-linear-dinov2-b-enc8-patch2patch-jsd-only-coeff0.2-50k:
+  sit-xl-linear-dinov2-b-enc8-patch2patch-jsd-0.2-0.2-only-coeff0.2-50k:
     projector_embed_dims: 768
     model: SiT-XL/2
 
@@ -47,6 +47,6 @@ monitored_experiments:
     model: SiT-XL/2
 
   # sample2sample_jsd
-  sit-xl-linear-dinov2-b-enc8-sample2sample-jsd-only-coeff0.2-50k:
+  sit-xl-linear-dinov2-b-enc8-sample2sample-jsd-0.2-0.2-only-coeff0.2-50k:
     projector_embed_dims: 768
     model: SiT-XL/2
