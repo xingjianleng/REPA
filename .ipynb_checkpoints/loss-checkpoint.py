@@ -25,7 +25,7 @@ class SILoss:
             accelerator=None, 
             latents_scale=None, 
             latents_bias=None,
-            loss_type=None,
+            loss_type="cos_sim",
         ):
         self.prediction = prediction
         self.weighting = weighting

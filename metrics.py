@@ -210,13 +210,13 @@ class AlignmentMetrics:
         kernel_matrix_B = feats_B @ feats_B.transpose(0, 1)
 
         # normalize the rows for both kernel matrices
-        kernel_matrix_A = F.normalize(kernel_matrix_A, dim=-1)
-        kernel_matrix_B = F.normalize(kernel_matrix_B, dim=-1)
+        kernel_matrix_A = F.normalize(kernel_matrix_A, dim=-1) # (B, B)
+        kernel_matrix_B = F.normalize(kernel_matrix_B, dim=-1) # (B, B)
 
         # compute the similarity of the kernel matrices between A and B
         # Since each row is now a unit vector, the dot product of corresponding rows
         # will be 1 if they are identical.
-        alignment_score = (kernel_matrix_A * kernel_matrix_B).sum(dim=-1)  # B
+        alignment_score = (kernel_matrix_A * kernel_matrix_B).sum(dim=-1) # B
 
         # average the alignment score across the samples
         alignment_score = alignment_score.mean(dim=0)
@@ -292,12 +292,12 @@ class AlignmentMetrics:
             feats_A_ = feats_A.clone().detach()
         else:
             feats_A_ = feats_A
-        kernel_matrix_A = feats_A @ feats_A.transpose(0, 1)
-        kernel_matrix_B = feats_B @ feats_B.transpose(0, 1)
+        kernel_matrix_A = feats_A @ feats_A.transpose(0, 1) # (B, B)
+        kernel_matrix_B = feats_B @ feats_B.transpose(0, 1) # (B, B)
 
         # Convert similarities to probability distributions
         P = F.softmax(kernel_matrix_A / temperature, dim=-1)  # (B, B)
-        Q = F.softmax(kernel_matrix_B / temperature, dim=-1)  # (B, B)
+        Q = F.softmax(kernel_matrix_B / temperature, dim=-1)  # (B, B) # can we use a different temp for target (more smoother)?
         M = 0.5 * (P + Q)  # Mixture distribution
 
         eps = 1e-10
