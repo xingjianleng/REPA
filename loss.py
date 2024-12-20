@@ -64,7 +64,9 @@ class SILoss:
         feats_A_: (B, N', D) (if provided)
         feats_B_: (B, N', E) (if provided)
         detach_grad: bool, detach the gradient of the part of the feature matrix
+        remove_diag: bool, remove diagonal elements from the similarity matrix (similarity with self)
         """
+        # NOTE: chunk_id not used, because patch2patch doesn't require gathering across GPUs, kept for compatibility
         # normalize the features along the last dimension
         feats_A = F.normalize(feats_A, dim=-1)
         feats_B = F.normalize(feats_B, dim=-1)
@@ -94,10 +96,15 @@ class SILoss:
         kernel_matrix_B = feats_B @ feats_B_.transpose(1, 2)
 
         if remove_diag:
-            # TODO: Support non-square (N, N') matrices for feats_A_ and feats_B_
-            N = kernel_matrix_A.shape[1]
-            kernel_matrix_A = kernel_matrix_A[:, ~torch.eye(N, dtype=torch.bool)].reshape(-1, N, N-1)
-            kernel_matrix_B = kernel_matrix_B[:, ~torch.eye(N, dtype=torch.bool)].reshape(-1, N, N-1)
+            # Support non-square (N, N') matrices for feats_A_ and feats_B_. In most cases, N == N'
+            N1, N2 = kernel_matrix_A.shape[1], kernel_matrix_A.shape[2]
+            mask = torch.zeros((N1, N2), dtype=torch.bool)
+            # NOTE: patch2patch doesn't depend on chunk_id as it doesn't gather multiple GPUs
+            start_idx = 0
+            end_idx = N1
+            mask[:, start_idx:end_idx] = torch.eye(N1)
+            kernel_matrix_A = kernel_matrix_A[:, ~mask].reshape(-1, N1, N2-1)
+            kernel_matrix_B = kernel_matrix_B[:, ~mask].reshape(-1, N1, N2-1)
 
         # normalize the rows for both kernel matrices
         kernel_matrix_A = F.normalize(kernel_matrix_A, dim=-1)
@@ -133,10 +140,12 @@ class SILoss:
             src_temp: float, temperature for softmax applied to feats_A
             tgt_temp: float, temperature for softmax applied to feats_B
             detach_grad: bool, detach the gradient of the part of the feature matrix
+            remove_diag: bool, remove diagonal elements from the similarity matrix (similarity with self)
 
         Returns:
             alignment_score: A scalar tensor representing the mean alignment score across the batch and all rows.
         """
+        # NOTE: chunk_id not used, because patch2patch doesn't require gathering across GPUs, kept for compatibility
         # Normalize feature vectors along the feature dimension
         feats_A = F.normalize(feats_A, dim=-1)
         feats_B = F.normalize(feats_B, dim=-1)
@@ -166,10 +175,15 @@ class SILoss:
         kernel_matrix_B = feats_B @ feats_B_.transpose(1, 2)
 
         if remove_diag:
-            # TODO: Support non-square (N, N') matrices for feats_A_ and feats_B_
-            N = kernel_matrix_A.shape[1]
-            kernel_matrix_A = kernel_matrix_A[:, ~torch.eye(N, dtype=torch.bool)].reshape(-1, N, N-1)
-            kernel_matrix_B = kernel_matrix_B[:, ~torch.eye(N, dtype=torch.bool)].reshape(-1, N, N-1)
+            # Support non-square (N, N') matrices for feats_A_ and feats_B_. In most cases, N == N'
+            N1, N2 = kernel_matrix_A.shape[1], kernel_matrix_A.shape[2]
+            mask = torch.zeros((N1, N2), dtype=torch.bool)
+            # NOTE: patch2patch doesn't depend on chunk_id as it doesn't gather multiple GPUs
+            start_idx = 0
+            end_idx = N1
+            mask[:, start_idx:end_idx] = torch.eye(N1)
+            kernel_matrix_A = kernel_matrix_A[:, ~mask].reshape(-1, N1, N2-1)
+            kernel_matrix_B = kernel_matrix_B[:, ~mask].reshape(-1, N1, N2-1)
         # print(kernel_matrix_A.shape, kernel_matrix_B.shape)
 
         # Convert similarities to probability distributions using softmax
@@ -208,7 +222,8 @@ class SILoss:
         return alignment_score
 
     @staticmethod
-    def sample2sample_kernel_alignment_score(feats_A, feats_B, feats_A_=None, feats_B_=None, detach_grad=False, remove_diag=False):
+    def sample2sample_kernel_alignment_score(feats_A, feats_B, feats_A_=None, feats_B_=None,
+                                            detach_grad=False, remove_diag=False, chunk_id=0):
         """
         Compute the sample2sample kernel alignment score between two sets of features.
         Use a copy from the metrics.py to retain the gradient computation.
@@ -217,6 +232,8 @@ class SILoss:
         feats_A_: (B', N', D) (if provided)
         feats_B_: (B', N', E) (if provided)
         detach_grad: bool, detach the gradient of the part of the feature matrix
+        remove_diag: bool, remove diagonal elements from the similarity matrix (similarity with self)
+        chunk_id: int, chunk id for distributed computing
         """
         # take the mean across last dimension # B, D
         feats_A = feats_A.mean(dim=-2)
@@ -253,10 +270,14 @@ class SILoss:
         kernel_matrix_B = feats_B @ feats_B_.transpose(0, 1)
 
         if remove_diag:
-            # TODO: Support non-square (B, B') matrices for feats_A_ and feats_B_
-            B = kernel_matrix_A.shape[0]
-            kernel_matrix_A = kernel_matrix_A[~torch.eye(B, dtype=torch.bool)].reshape(B, B-1)
-            kernel_matrix_B = kernel_matrix_B[~torch.eye(B, dtype=torch.bool)].reshape(B, B-1)
+            # Support non-square (B, B') matrices for feats_A_ and feats_B_, B < B'
+            B1, B2 = kernel_matrix_A.shape[0], kernel_matrix_A.shape[1]
+            mask = torch.zeros_like(kernel_matrix_A, dtype=torch.bool)
+            start_idx = chunk_id * B1
+            end_idx = (chunk_id + 1) * B1
+            mask[:, start_idx:end_idx] = torch.eye(B1)
+            kernel_matrix_A = kernel_matrix_A[~mask].reshape(B1, B2-1)
+            kernel_matrix_B = kernel_matrix_B[~mask].reshape(B1, B2-1)
 
         # normalize the rows for both kernel matrices
         kernel_matrix_A = F.normalize(kernel_matrix_A, dim=-1)
@@ -272,7 +293,8 @@ class SILoss:
         return alignment_score
 
     @staticmethod
-    def sample2sample_kernel_alignment_score_jsd(feats_A, feats_B, feats_A_=None, feats_B_=None, src_temp=1.0, tgt_temp=1.0, detach_grad=False, remove_diag=False):
+    def sample2sample_kernel_alignment_score_jsd(feats_A, feats_B, feats_A_=None, feats_B_=None, src_temp=1.0, tgt_temp=1.0,
+                                                detach_grad=False, remove_diag=False, chunk_id=0):
         """
         Compute a sample-to-sample kernel alignment score using Jensen-Shannon Divergence.
         1. Average feats_A and feats_B across the N dimension to get (B, D) and (B, E).
@@ -290,6 +312,8 @@ class SILoss:
             src_temp: float, temperature for softmax applied to feats_A
             tgt_temp: float, temperature for softmax applied to feats_B
             detach_grad: bool, detach the gradient of the part of the feature matrix
+            remove_diag: bool, remove diagonal elements from the similarity matrix (similarity with self)
+            chunk_id: int, chunk id for distributed computing
 
         Returns:
             alignment_score: a scalar float value.
@@ -329,10 +353,14 @@ class SILoss:
         kernel_matrix_B = feats_B @ feats_B_.transpose(0, 1)
 
         if remove_diag:
-            # TODO: Support non-square (B, B') matrices for feats_A_ and feats_B_
-            B = kernel_matrix_A.shape[0]
-            kernel_matrix_A = kernel_matrix_A[~torch.eye(B, dtype=torch.bool)].reshape(B, B-1)
-            kernel_matrix_B = kernel_matrix_B[~torch.eye(B, dtype=torch.bool)].reshape(B, B-1)
+            # Support non-square (B, B') matrices for feats_A_ and feats_B_, B < B'
+            B1, B2 = kernel_matrix_A.shape[0], kernel_matrix_A.shape[1]
+            mask = torch.zeros_like(kernel_matrix_A, dtype=torch.bool)
+            start_idx = chunk_id * B1
+            end_idx = (chunk_id + 1) * B1
+            mask[:, start_idx:end_idx] = torch.eye(B1)
+            kernel_matrix_A = kernel_matrix_A[~mask].reshape(B1, B2-1)
+            kernel_matrix_B = kernel_matrix_B[~mask].reshape(B1, B2-1)
         # print(kernel_matrix_A.shape, kernel_matrix_B.shape)
 
         # Convert similarities to probability distributions
@@ -478,13 +506,15 @@ class SILoss:
                 # Get a copy of projector (e.g. DINOv2) features (already detached)
                 zs_gathered = self.accelerator.gather(zs)
 
+                # NOTE: Since we gather across GPUs, we need to provide chunk_id to get correct index for features on the current GPU
                 if self.loss_type == "sample2sample":
                     score_fn = self.sample2sample_kernel_alignment_score
                     score_fn_kwargs = dict(
                         detach_grad=alignment_kwargs["ka_detach_grad"],
                         remove_diag=alignment_kwargs["ka_remove_diag"],
+                        chunk_id=curr_id,
                     )
-                
+
                 elif self.loss_type == "sample2sample_jsd":
                     score_fn = self.sample2sample_kernel_alignment_score_jsd
                     score_fn_kwargs = dict(
@@ -492,9 +522,10 @@ class SILoss:
                         tgt_temp=alignment_kwargs["s2s_jsd_tgt_temp"],
                         detach_grad=alignment_kwargs["ka_detach_grad"],
                         remove_diag=alignment_kwargs["ka_remove_diag"],
+                        chunk_id=curr_id,
                     )
 
-                # NOTE We should compute kernel alignment with unprojected features only
+                # NOTE: We should compute kernel alignment with unprojected features only
                 for fs_tilde, fs_tilde_g in zip(fs_tilde_layers, fs_tilde_gathered):
                     for i, (z, z_g, f_tilde, f_tilde_g) in enumerate(zip(zs, zs_gathered, fs_tilde, fs_tilde_g)):
                         kernel_alignment_loss += -score_fn(
@@ -579,6 +610,7 @@ class SILoss:
                                 # TODO: for now we have some problems with the sample2sample alignment score computation
                                 #        we are not gathering all features to compute sample2sample self-correlation for logging, which means we are
                                 #        compute the correlation within the batch on the current GPU, but we leave it here for now
+                                #        Same for the below section!!!
                                 curr_score = AlignmentMetrics.measure(
                                     metric=metric,
                                     feats_A=feats_A,
