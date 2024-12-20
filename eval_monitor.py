@@ -5,7 +5,7 @@ import subprocess
 
 # Constants
 EXP_FOLDER = "exps/"
-EVAL_FOLDER = "evals_2/"
+EVAL_FOLDER = "evals_3/"
 SAMPLES_FOLDER = "samples/"
 JOB_FILES_TEMP = "autoeval_jobs_temp/"
 CFG_PATH = "configs/eval_monitor_cfg.yaml"

@@ -26,7 +26,7 @@ class SILoss:
             latents_scale=None, 
             latents_bias=None,
             loss_type="cos_sim",
-            gather_feats=False
+            ka_gather_feats=False
         ):
         self.prediction = prediction
         self.weighting = weighting
@@ -36,7 +36,7 @@ class SILoss:
         self.latents_scale = latents_scale
         self.latents_bias = latents_bias
         self.loss_type = loss_type
-        self.gather_feats = gather_feats
+        self.ka_gather_feats = ka_gather_feats
 
     def interpolant(self, t):
         if self.path_type == "linear":
@@ -55,14 +55,14 @@ class SILoss:
         return alpha_t, sigma_t, d_alpha_t, d_sigma_t
 
     @staticmethod
-    def patch2patch_kernel_alignment_score(feats_A, feats_B, feats_A_=None, feats_B_=None, detach_grad=False):
+    def patch2patch_kernel_alignment_score(feats_A, feats_B, feats_A_=None, feats_B_=None, detach_grad=False, remove_diag=False):
         """
         Compute the patch2patch kernel alignment score between two sets of features.
         Use a copy from the metrics.py to retain the gradient computation.
         feats_A:  (B, N, D)
         feats_B:  (B, N, E) # can be different from dimension
-        feats_A_: (B, N, D) (if provided)
-        feats_B_: (B, N, E) (if provided)
+        feats_A_: (B, N', D) (if provided)
+        feats_B_: (B, N', E) (if provided)
         detach_grad: bool, detach the gradient of the part of the feature matrix
         """
         # normalize the features along the last dimension
@@ -75,8 +75,6 @@ class SILoss:
             else:
                 feats_A_ = feats_A
         else:
-            # NOTE: patch2patch requires same batch size, patch numbers, and feature dimensions
-            assert feats_A.shape == feats_A_.shape, "Shape should be the same for feats_A and feats_A_"
             feats_A_ = F.normalize(feats_A_, dim=-1)
             if detach_grad:
                 feats_A_ = feats_A_.detach()
@@ -87,8 +85,6 @@ class SILoss:
             else:
                 feats_B_ = feats_B
         else:
-            # NOTE: patch2patch requires same batch size, patch numbers, and feature dimensions
-            assert feats_B.shape == feats_B_.shape, "Shape should be the same for feats_B and feats_B_"
             feats_B_ = F.normalize(feats_B_, dim=-1)
             if detach_grad:
                 feats_B_ = feats_B_.detach()
@@ -96,6 +92,12 @@ class SILoss:
         # compute the kernel matrix --> patch2patch similarity matrix for both A and B # B, N, N
         kernel_matrix_A = feats_A @ feats_A_.transpose(1, 2)
         kernel_matrix_B = feats_B @ feats_B_.transpose(1, 2)
+
+        if remove_diag:
+            # TODO: Support non-square (N, N') matrices for feats_A_ and feats_B_
+            N = kernel_matrix_A.shape[1]
+            kernel_matrix_A = kernel_matrix_A[:, ~torch.eye(N, dtype=torch.bool)].reshape(-1, N, N-1)
+            kernel_matrix_B = kernel_matrix_B[:, ~torch.eye(N, dtype=torch.bool)].reshape(-1, N, N-1)
 
         # normalize the rows for both kernel matrices
         kernel_matrix_A = F.normalize(kernel_matrix_A, dim=-1)
@@ -111,7 +113,7 @@ class SILoss:
         return alignment_score
 
     @staticmethod
-    def patch2patch_kernel_alignment_score_jsd(feats_A, feats_B, feats_A_=None, feats_B_=None, src_temp=1.0, tgt_temp=1.0, detach_grad=False):
+    def patch2patch_kernel_alignment_score_jsd(feats_A, feats_B, feats_A_=None, feats_B_=None, src_temp=1.0, tgt_temp=1.0, detach_grad=False, remove_diag=False):
         """
         Compute a patch-to-patch kernel alignment score using Jensen-Shannon Divergence.
         For each sample in the batch, we:
@@ -126,8 +128,8 @@ class SILoss:
         Args:
             feats_A: Tensor of shape (B, N, D)
             feats_B: Tensor of shape (B, N, E)
-            feats_A_: (B, N, D) (if provided)
-            feats_B_: (B, N, E) (if provided)
+            feats_A_: (B, N', D) (if provided)
+            feats_B_: (B, N', E) (if provided)
             src_temp: float, temperature for softmax applied to feats_A
             tgt_temp: float, temperature for softmax applied to feats_B
             detach_grad: bool, detach the gradient of the part of the feature matrix
@@ -145,8 +147,6 @@ class SILoss:
             else:
                 feats_A_ = feats_A
         else:
-            # NOTE: patch2patch requires same batch size, patch numbers, and feature dimensions
-            assert feats_A.shape == feats_A_.shape, "Shape should be the same for feats_A and feats_A_"
             feats_A_ = F.normalize(feats_A_, dim=-1)
             if detach_grad:
                 feats_A_ = feats_A_.detach()
@@ -157,8 +157,6 @@ class SILoss:
             else:
                 feats_B_ = feats_B
         else:
-            # NOTE: patch2patch requires same batch size, patch numbers, and feature dimensions
-            assert feats_B.shape == feats_B_.shape, "Shape should be the same for feats_B and feats_B_"
             feats_B_ = F.normalize(feats_B_, dim=-1)
             if detach_grad:
                 feats_B_ = feats_B_.detach()
@@ -166,6 +164,13 @@ class SILoss:
         # Compute patch-to-patch similarity matrices (B, N, N)
         kernel_matrix_A = feats_A @ feats_A_.transpose(1, 2)
         kernel_matrix_B = feats_B @ feats_B_.transpose(1, 2)
+
+        if remove_diag:
+            # TODO: Support non-square (N, N') matrices for feats_A_ and feats_B_
+            N = kernel_matrix_A.shape[1]
+            kernel_matrix_A = kernel_matrix_A[:, ~torch.eye(N, dtype=torch.bool)].reshape(-1, N, N-1)
+            kernel_matrix_B = kernel_matrix_B[:, ~torch.eye(N, dtype=torch.bool)].reshape(-1, N, N-1)
+        # print(kernel_matrix_A.shape, kernel_matrix_B.shape)
 
         # Convert similarities to probability distributions using softmax
         P = F.softmax(kernel_matrix_A / src_temp, dim=-1)  # (B, N, N)
@@ -203,14 +208,14 @@ class SILoss:
         return alignment_score
 
     @staticmethod
-    def sample2sample_kernel_alignment_score(feats_A, feats_B, feats_A_=None, feats_B_=None, detach_grad=False):
+    def sample2sample_kernel_alignment_score(feats_A, feats_B, feats_A_=None, feats_B_=None, detach_grad=False, remove_diag=False):
         """
         Compute the sample2sample kernel alignment score between two sets of features.
         Use a copy from the metrics.py to retain the gradient computation.
         feats_A: B, N, D
         feats_B: B, N, E
-        feats_A_: (B', N, D) (if provided)
-        feats_B_: (B', N, E) (if provided)
+        feats_A_: (B', N', D) (if provided)
+        feats_B_: (B', N', E) (if provided)
         detach_grad: bool, detach the gradient of the part of the feature matrix
         """
         # take the mean across last dimension # B, D
@@ -247,6 +252,12 @@ class SILoss:
         kernel_matrix_A = feats_A @ feats_A_.transpose(0, 1)
         kernel_matrix_B = feats_B @ feats_B_.transpose(0, 1)
 
+        if remove_diag:
+            # TODO: Support non-square (B, B') matrices for feats_A_ and feats_B_
+            B = kernel_matrix_A.shape[0]
+            kernel_matrix_A = kernel_matrix_A[~torch.eye(B, dtype=torch.bool)].reshape(B, B-1)
+            kernel_matrix_B = kernel_matrix_B[~torch.eye(B, dtype=torch.bool)].reshape(B, B-1)
+
         # normalize the rows for both kernel matrices
         kernel_matrix_A = F.normalize(kernel_matrix_A, dim=-1)
         kernel_matrix_B = F.normalize(kernel_matrix_B, dim=-1)
@@ -261,7 +272,7 @@ class SILoss:
         return alignment_score
 
     @staticmethod
-    def sample2sample_kernel_alignment_score_jsd(feats_A, feats_B, feats_A_=None, feats_B_=None, src_temp=1.0, tgt_temp=1.0, detach_grad=False):
+    def sample2sample_kernel_alignment_score_jsd(feats_A, feats_B, feats_A_=None, feats_B_=None, src_temp=1.0, tgt_temp=1.0, detach_grad=False, remove_diag=False):
         """
         Compute a sample-to-sample kernel alignment score using Jensen-Shannon Divergence.
         1. Average feats_A and feats_B across the N dimension to get (B, D) and (B, E).
@@ -274,8 +285,8 @@ class SILoss:
         Args:
             feats_A: (B, N, D)
             feats_B: (B, N, E)
-            feats_A_: (B', N, D) (if provided)
-            feats_B_: (B', N, E) (if provided)
+            feats_A_: (B', N', D) (if provided)
+            feats_B_: (B', N', E) (if provided)
             src_temp: float, temperature for softmax applied to feats_A
             tgt_temp: float, temperature for softmax applied to feats_B
             detach_grad: bool, detach the gradient of the part of the feature matrix
@@ -316,6 +327,12 @@ class SILoss:
         # Compute similarity matrices (B, B)
         kernel_matrix_A = feats_A @ feats_A_.transpose(0, 1)
         kernel_matrix_B = feats_B @ feats_B_.transpose(0, 1)
+
+        if remove_diag:
+            # TODO: Support non-square (B, B') matrices for feats_A_ and feats_B_
+            B = kernel_matrix_A.shape[0]
+            kernel_matrix_A = kernel_matrix_A[~torch.eye(B, dtype=torch.bool)].reshape(B, B-1)
+            kernel_matrix_B = kernel_matrix_B[~torch.eye(B, dtype=torch.bool)].reshape(B, B-1)
         # print(kernel_matrix_A.shape, kernel_matrix_B.shape)
 
         # Convert similarities to probability distributions
@@ -422,7 +439,8 @@ class SILoss:
                     kernel_alignment_loss += -self.patch2patch_kernel_alignment_score(
                         feats_A=z,
                         feats_B=f_tilde,
-                        detach_grad=alignment_kwargs["ka_detach_grad"]
+                        detach_grad=alignment_kwargs["ka_detach_grad"],
+                        remove_diag=alignment_kwargs["ka_remove_diag"],
                     )
 
         elif self.loss_type == "patch2patch_jsd":
@@ -435,17 +453,27 @@ class SILoss:
                         src_temp=alignment_kwargs["p2p_jsd_src_temp"],
                         tgt_temp=alignment_kwargs["p2p_jsd_tgt_temp"],
                         detach_grad=alignment_kwargs["ka_detach_grad"],
+                        remove_diag=alignment_kwargs["ka_remove_diag"],
                     )
 
         elif "sample2sample" in self.loss_type:
             # Not patch2patch, then we check if we need to gather feats across GPUs
-            if self.gather_feats:
+            if self.ka_gather_feats:
                 # For sample2sample, we need to gather all features to compute the alignment score
 
-                # Get a copy of detached fs_tilde and gather, L -> multiple alignment layers, P -> num_projectors
-                # TODO: We can use the trick to gather a `fs_tilde_gathered` with gradient enabled
                 fs_tilde_detached = [[fs_tilde.detach() for fs_tilde in fs_tilde_layer] for fs_tilde_layer in fs_tilde_layers]
                 fs_tilde_gathered = self.accelerator.gather(fs_tilde_detached)
+
+                # TODO: Test it before use!!!!!
+                # We use the trick to gather a `fs_tilde_gathered` with gradient enabled for the part of features on that GPU
+                curr_id = self.accelerator.process_index
+                B = fs_tilde_layers[0][0].shape[0]
+                start_idx = curr_id * B
+                end_idx = (curr_id + 1) * B
+                for i in range(len(fs_tilde_gathered)):
+                    for j in range(len(fs_tilde_gathered[i])):
+                        fs_tilde_gathered[i][j][start_idx:end_idx] -= fs_tilde_layers[i][j].detach()
+                        fs_tilde_gathered[i][j][start_idx:end_idx] += fs_tilde_layers[i][j]
 
                 # Get a copy of projector (e.g. DINOv2) features (already detached)
                 zs_gathered = self.accelerator.gather(zs)
@@ -454,6 +482,7 @@ class SILoss:
                     score_fn = self.sample2sample_kernel_alignment_score
                     score_fn_kwargs = dict(
                         detach_grad=alignment_kwargs["ka_detach_grad"],
+                        remove_diag=alignment_kwargs["ka_remove_diag"],
                     )
                 
                 elif self.loss_type == "sample2sample_jsd":
@@ -462,6 +491,7 @@ class SILoss:
                         src_temp=alignment_kwargs["s2s_jsd_src_temp"],
                         tgt_temp=alignment_kwargs["s2s_jsd_tgt_temp"],
                         detach_grad=alignment_kwargs["ka_detach_grad"],
+                        remove_diag=alignment_kwargs["ka_remove_diag"],
                     )
 
                 # NOTE We should compute kernel alignment with unprojected features only
@@ -485,6 +515,7 @@ class SILoss:
                                 feats_A=z,
                                 feats_B=f_tilde,
                                 detach_grad=alignment_kwargs["ka_detach_grad"],
+                                remove_diag=alignment_kwargs["ka_remove_diag"],
                             )
 
                 elif self.loss_type == "sample2sample_jsd":
@@ -496,6 +527,7 @@ class SILoss:
                                 src_temp=alignment_kwargs["s2s_jsd_src_temp"],
                                 tgt_temp=alignment_kwargs["s2s_jsd_tgt_temp"],
                                 detach_grad=alignment_kwargs["ka_detach_grad"],
+                                remove_diag=alignment_kwargs["ka_remove_diag"],
                             )
 
         else:
@@ -535,12 +567,16 @@ class SILoss:
                                     measure_kwargs["topk"] = alignment_kwargs["cknna_topk"]
                                 elif metric == "patch2patch_kernel_alignment_score_jsd":
                                     # jsd needs temperature, use the source temperature for logging
-                                    measure_kwargs["temperature"] = alignment_kwargs["p2p_jsd_src_temp"]
+                                    measure_kwargs["src_temp"] = alignment_kwargs["p2p_jsd_src_temp"]
+                                    measure_kwargs["tgt_temp"] = alignment_kwargs["p2p_jsd_tgt_temp"]
+                                    measure_kwargs["remove_diag"] = alignment_kwargs["ka_remove_diag"]
                                 elif metric == "sample2sample_kernel_alignment_score_jsd":
                                     # jsd needs temperature, use the source temperature for logging
-                                    measure_kwargs["temperature"] = alignment_kwargs["s2s_jsd_src_temp"]
+                                    measure_kwargs["src_temp"] = alignment_kwargs["s2s_jsd_src_temp"]
+                                    measure_kwargs["tgt_temp"] = alignment_kwargs["s2s_jsd_tgt_temp"]
+                                    measure_kwargs["remove_diag"] = alignment_kwargs["ka_remove_diag"]
 
-                                # FIXME: for now we have some problems with the sample2sample alignment score computation
+                                # TODO: for now we have some problems with the sample2sample alignment score computation
                                 #        we are not gathering all features to compute sample2sample self-correlation for logging, which means we are
                                 #        compute the correlation within the batch on the current GPU, but we leave it here for now
                                 curr_score = AlignmentMetrics.measure(
@@ -581,10 +617,14 @@ class SILoss:
                                 measure_kwargs["topk"] = alignment_kwargs["cknna_topk"]
                             elif metric == "patch2patch_kernel_alignment_score_jsd":
                                 # jsd needs temperature, use the source temperature for logging
-                                measure_kwargs["temperature"] = alignment_kwargs["p2p_jsd_src_temp"]
+                                measure_kwargs["src_temp"] = alignment_kwargs["p2p_jsd_src_temp"]
+                                measure_kwargs["tgt_temp"] = alignment_kwargs["p2p_jsd_tgt_temp"]
+                                measure_kwargs["remove_diag"] = alignment_kwargs["ka_remove_diag"]
                             elif metric == "sample2sample_kernel_alignment_score_jsd":
                                 # jsd needs temperature, use the source temperature for logging
-                                measure_kwargs["temperature"] = alignment_kwargs["s2s_jsd_src_temp"]
+                                measure_kwargs["src_temp"] = alignment_kwargs["s2s_jsd_src_temp"]
+                                measure_kwargs["tgt_temp"] = alignment_kwargs["s2s_jsd_tgt_temp"]
+                                measure_kwargs["remove_diag"] = alignment_kwargs["ka_remove_diag"]
 
                             curr_score = AlignmentMetrics.measure(
                                 metric=metric,

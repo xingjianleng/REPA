@@ -185,169 +185,51 @@ class AlignmentMetrics:
 
         edit_distance = compute_distance(knn_A, knn_B, TAF.edit_distance)
         return 1 - torch.mean(edit_distance) / topk
-    
-    
-    @staticmethod
-    def sample2sample_kernel_alignment_score(feats_A, feats_B, detach_grad=False):
-        """
-        feats_A: B, N, D
-        feats_B: B, N, E
-        """
-        # take the mean across last dimension # B, D
-        feats_A = feats_A.mean(dim=-2)
-        feats_B = feats_B.mean(dim=-2)
 
+    @staticmethod
+    def patch2patch_kernel_alignment_score(feats_A, feats_B, feats_A_=None, feats_B_=None, detach_grad=False, remove_diag=False):
+        """
+        Compute the patch2patch kernel alignment score between two sets of features.
+        Use a copy from the metrics.py to retain the gradient computation.
+        feats_A:  (B, N, D)
+        feats_B:  (B, N, E) # can be different from dimension
+        feats_A_: (B, N', D) (if provided)
+        feats_B_: (B, N', E) (if provided)
+        detach_grad: bool, detach the gradient of the part of the feature matrix
+        """
         # normalize the features along the last dimension
         feats_A = F.normalize(feats_A, dim=-1)
         feats_B = F.normalize(feats_B, dim=-1)
 
-        # compute the kernel matrix --> sample2sample similarity matrix for both A and B # B, B
-        if detach_grad:
-            feats_A_ = feats_A.clone().detach()
+        if feats_A_ is None:
+            if detach_grad:
+                feats_A_ = feats_A.clone().detach()
+            else:
+                feats_A_ = feats_A
         else:
-            feats_A_ = feats_A
-        kernel_matrix_A = feats_A @ feats_A_.transpose(0, 1)
-        kernel_matrix_B = feats_B @ feats_B.transpose(0, 1)
+            feats_A_ = F.normalize(feats_A_, dim=-1)
+            if detach_grad:
+                feats_A_ = feats_A_.detach()
 
-        # normalize the rows for both kernel matrices
-        kernel_matrix_A = F.normalize(kernel_matrix_A, dim=-1)
-        kernel_matrix_B = F.normalize(kernel_matrix_B, dim=-1)
-
-        # compute the similarity of the kernel matrices between A and B
-        # Since each row is now a unit vector, the dot product of corresponding rows
-        # will be 1 if they are identical.
-        alignment_score = (kernel_matrix_A * kernel_matrix_B).sum(dim=-1)  # B
-
-        # average the alignment score across the samples
-        alignment_score = alignment_score.mean(dim=0)
-        return alignment_score.item()
-
-    @staticmethod
-    def sample2sample_kernel_alignment_score_kl_div(feats_A, feats_B, temperature=1.0):
-        """
-        Another variant of sample2sample kernel alignment score as above, but we treat each line as logits,
-        and apply softmax, then compute the row-wise KL divergence as the similarity measure.
-        feats_A: B, N, D
-        feats_B: B, N, E
-        temperature: float, temperature for softmax
-        NOTE: This only computes KL(A || B) not the other way around. Use with caution.
-        """
-        # take the mean across the N dimension # B, D
-        feats_A = feats_A.mean(dim=-2)
-        feats_B = feats_B.mean(dim=-2)
-
-        # normalize the features along the last dimension
-        feats_A = F.normalize(feats_A, dim=-1)
-        feats_B = F.normalize(feats_B, dim=-1)
-
-        # compute the kernel matrix --> sample2sample similarity matrix for both A and B # B, B
-        kernel_matrix_A = feats_A @ feats_A.transpose(0, 1)
-        kernel_matrix_B = feats_B @ feats_B.transpose(0, 1)
-
-        # treat each row in the kernel matrix as logits and apply softmax
-        P = F.softmax(kernel_matrix_A / temperature, dim=-1)
-        Q = F.softmax(kernel_matrix_B / temperature, dim=-1)
-
-        eps = 1e-10
-        P_clamped = torch.clamp(P, min=eps)
-        Q_clamped = torch.clamp(Q, min=eps)
-
-        # KL(P||M) = sum P * log(P/M) over the last dimension (B)
-        # NOTE: This only computes KL(A || B) not the other way around. Use with caution.
-        KL_PQ = torch.sum(P_clamped * (torch.log(P_clamped) - torch.log(Q_clamped)), dim=-1)  # B
-
-        # NOTE: The alignment score range is [-inf, 0], not [0, 1]. Use with caution.
-        alignment_score = -KL_PQ.mean()
-        return alignment_score.item()
-
-    @staticmethod
-    def sample2sample_kernel_alignment_score_jsd(feats_A, feats_B, temperature=1.0, detach_grad=False):
-        """
-        Compute a sample-to-sample kernel alignment score using Jensen-Shannon Divergence.
-        1. Average feats_A and feats_B across the N dimension to get (B, D) and (B, E).
-        2. Normalize features along the last dimension.
-        3. Compute sample-to-sample similarity matrices for A and B (B, B).
-        4. Convert these matrices to probability distributions (softmax).
-        5. Compute the JSD between these distributions.
-        6. Convert JSD to an alignment score = 1 - JSD_mean, return as a scalar.
-
-        Args:
-            feats_A: (B, N, D)
-            feats_B: (B, N, E)
-            temperature: float, temperature for softmax
-
-        Returns:
-            alignment_score: a scalar float value.
-        """
-        # Average features across the N dimension: (B, N, D) -> (B, D)
-        feats_A = feats_A.mean(dim=1)
-        feats_B = feats_B.mean(dim=1)
-
-        # Normalize the features
-        feats_A = F.normalize(feats_A, dim=-1)
-        feats_B = F.normalize(feats_B, dim=-1)
-
-        # Compute similarity matrices (B, B)
-        if detach_grad:
-            feats_A_ = feats_A.clone().detach()
+        if feats_B_ is None:
+            if detach_grad:
+                feats_B_ = feats_B.clone().detach()
+            else:
+                feats_B_ = feats_B
         else:
-            feats_A_ = feats_A
-        kernel_matrix_A = feats_A @ feats_A_.transpose(0, 1)
-        kernel_matrix_B = feats_B @ feats_B.transpose(0, 1)
-
-        # Convert similarities to probability distributions
-        P = F.softmax(kernel_matrix_A / temperature, dim=-1)  # (B, B)
-        Q = F.softmax(kernel_matrix_B / temperature, dim=-1)  # (B, B)
-        M = 0.5 * (P + Q)  # Mixture distribution
-
-        eps = 1e-10
-        P_clamped = P.clamp(min=eps)
-        Q_clamped = Q.clamp(min=eps)
-        M_clamped = M.clamp(min=eps)
-
-        # Compute KL divergences using F.kl_div
-        # KL(P||M) = sum(P * log(P/M)) over dim=-1
-        # Using F.kl_div: input=logM, target=P
-        logM = M_clamped.log()
-
-        # Compute KL(P||M) and KL(Q||M) row-wise
-        # KL(P||M) = sum_over_j P_j * log(P_j/M_j)
-        KL_PM = (P_clamped * (P_clamped.log() - M_clamped.log())).sum(dim=-1)  # (B)
-        KL_QM = (Q_clamped * (Q_clamped.log() - M_clamped.log())).sum(dim=-1)  # (B)
-
-        # # equivalent using F.kl_div
-        # KL_PM = F.kl_div(logM, P_clamped, reduction='none', log_target=False).sum(dim=-1)  # (B,)
-        # KL_QM = F.kl_div(logM, Q_clamped, reduction='none', log_target=False).sum(dim=-1)  # (B,)
-
-        # JSD in base 2
-        log2 = torch.log(torch.tensor(2.0))
-        JSD = 0.5 * (KL_PM + KL_QM) / log2  # (B,)
-
-        # Mean JSD across batch
-        JSD_mean = JSD.mean()
-
-        # Alignment score: 1 - JSD
-        alignment_score = 1.0 - JSD_mean
-
-        return alignment_score.item()
-
-    @staticmethod
-    def patch2patch_kernel_alignment_score(feats_A, feats_B, detach_grad=False):
-        """
-        feats_A: B, N, D
-        feats_B: B, N, E # can be different from dimension
-        """
-        # normalize the features along the last dimension
-        feats_A = F.normalize(feats_A, dim=-1)
-        feats_B = F.normalize(feats_B, dim=-1)
+            feats_B_ = F.normalize(feats_B_, dim=-1)
+            if detach_grad:
+                feats_B_ = feats_B_.detach()
 
         # compute the kernel matrix --> patch2patch similarity matrix for both A and B # B, N, N
-        if detach_grad:
-            feats_A_ = feats_A.clone().detach()
-        else:
-            feats_A_ = feats_A
         kernel_matrix_A = feats_A @ feats_A_.transpose(1, 2)
-        kernel_matrix_B = feats_B @ feats_B.transpose(1, 2)
+        kernel_matrix_B = feats_B @ feats_B_.transpose(1, 2)
+
+        if remove_diag:
+            # TODO: Support non-square (N, N') matrices for feats_A_ and feats_B_
+            N = kernel_matrix_A.shape[1]
+            kernel_matrix_A = kernel_matrix_A[:, ~torch.eye(N, dtype=torch.bool)].reshape(-1, N, N-1)
+            kernel_matrix_B = kernel_matrix_B[:, ~torch.eye(N, dtype=torch.bool)].reshape(-1, N, N-1)
 
         # normalize the rows for both kernel matrices
         kernel_matrix_A = F.normalize(kernel_matrix_A, dim=-1)
@@ -363,40 +245,7 @@ class AlignmentMetrics:
         return alignment_score.item()
 
     @staticmethod
-    def patch2patch_kernel_alignment_score_kl_div(feats_A, feats_B, temperature=1.0):
-        """
-        Another variant of patch2patch kernel alignment score as above, but we treat each line as logits,
-        and apply softmax, then compute the row-wise KL divergence as the similarity measure.
-        feats_A: B, N, D
-        feats_B: B, N, E # can be different from dimension
-        temperature: float, temperature for softmax
-        """
-        # normalize the features along the last dimension
-        feats_A = F.normalize(feats_A, dim=-1)
-        feats_B = F.normalize(feats_B, dim=-1)                        
-
-        # compute the kernel matrix --> patch2patch similarity matrix for both A and B # B, N, N
-        kernel_matrix_A = feats_A @ feats_A.transpose(1, 2)                                             
-        kernel_matrix_B = feats_B @ feats_B.transpose(1, 2)
- 
-        # treat each row in the kernel matrix as logits and apply softmax                                                                
-        P = F.softmax(kernel_matrix_A / temperature, dim=-1)                               
-        Q = F.softmax(kernel_matrix_B / temperature, dim=-1)
-
-        eps = 1e-10
-        P_clamped = torch.clamp(P, min=eps)
-        Q_clamped = torch.clamp(Q, min=eps)
-
-        # KL(P||M) = sum P * log(P/M) over the last dimension (N)
-        # NOTE: This only computes KL(A || B) not the other way around. Use with caution.
-        KL_PQ = torch.sum(P_clamped * (torch.log(P_clamped) - torch.log(Q_clamped)), dim=-1)  # B, N
-
-        # NOTE: The alignment score range is [-inf, 0], not [0, 1]. Use with caution.
-        alignment_score = -KL_PQ.mean()
-        return alignment_score.item()
-
-    @staticmethod
-    def patch2patch_kernel_alignment_score_jsd(feats_A, feats_B, temperature=1.0, detach_grad=False):
+    def patch2patch_kernel_alignment_score_jsd(feats_A, feats_B, feats_A_=None, feats_B_=None, src_temp=1.0, tgt_temp=1.0, detach_grad=False, remove_diag=False):
         """
         Compute a patch-to-patch kernel alignment score using Jensen-Shannon Divergence.
         For each sample in the batch, we:
@@ -411,7 +260,11 @@ class AlignmentMetrics:
         Args:
             feats_A: Tensor of shape (B, N, D)
             feats_B: Tensor of shape (B, N, E)
-            temperature: float, temperature for softmax
+            feats_A_: (B, N', D) (if provided)
+            feats_B_: (B, N', E) (if provided)
+            src_temp: float, temperature for softmax applied to feats_A
+            tgt_temp: float, temperature for softmax applied to feats_B
+            detach_grad: bool, detach the gradient of the part of the feature matrix
 
         Returns:
             alignment_score: A scalar tensor representing the mean alignment score across the batch and all rows.
@@ -420,17 +273,39 @@ class AlignmentMetrics:
         feats_A = F.normalize(feats_A, dim=-1)
         feats_B = F.normalize(feats_B, dim=-1)
 
-        # Compute patch-to-patch similarity matrices (B, N, N)
-        if detach_grad:
-            feats_A_ = feats_A.clone().detach()
+        if feats_A_ is None:
+            if detach_grad:
+                feats_A_ = feats_A.clone().detach()
+            else:
+                feats_A_ = feats_A
         else:
-            feats_A_ = feats_A
+            feats_A_ = F.normalize(feats_A_, dim=-1)
+            if detach_grad:
+                feats_A_ = feats_A_.detach()
+
+        if feats_B_ is None:
+            if detach_grad:
+                feats_B_ = feats_B.clone().detach()
+            else:
+                feats_B_ = feats_B
+        else:
+            feats_B_ = F.normalize(feats_B_, dim=-1)
+            if detach_grad:
+                feats_B_ = feats_B_.detach()
+
+        # Compute patch-to-patch similarity matrices (B, N, N)
         kernel_matrix_A = feats_A @ feats_A_.transpose(1, 2)
-        kernel_matrix_B = feats_B @ feats_B.transpose(1, 2)
+        kernel_matrix_B = feats_B @ feats_B_.transpose(1, 2)
+
+        if remove_diag:
+            # TODO: Support non-square (N, N') matrices for feats_A_ and feats_B_
+            N = kernel_matrix_A.shape[1]
+            kernel_matrix_A = kernel_matrix_A[:, ~torch.eye(N, dtype=torch.bool)].reshape(-1, N, N-1)
+            kernel_matrix_B = kernel_matrix_B[:, ~torch.eye(N, dtype=torch.bool)].reshape(-1, N, N-1)
 
         # Convert similarities to probability distributions using softmax
-        P = F.softmax(kernel_matrix_A / temperature, dim=-1)  # (B, N, N)
-        Q = F.softmax(kernel_matrix_B / temperature, dim=-1)  # (B, N, N)
+        P = F.softmax(kernel_matrix_A / src_temp, dim=-1)  # (B, N, N)
+        Q = F.softmax(kernel_matrix_B / tgt_temp, dim=-1)  # (B, N, N)
 
         # Compute the mixture distribution M = 0.5*(P+Q)
         M = 0.5 * (P + Q)
@@ -461,7 +336,169 @@ class AlignmentMetrics:
 
         # Convert JSD to a similarity score: perfect alignment (JSD=0) => score=1
         alignment_score = 1.0 - JSD_mean
+        return alignment_score.item()
 
+    @staticmethod
+    def sample2sample_kernel_alignment_score(feats_A, feats_B, feats_A_=None, feats_B_=None, detach_grad=False, remove_diag=False):
+        """
+        Compute the sample2sample kernel alignment score between two sets of features.
+        Use a copy from the metrics.py to retain the gradient computation.
+        feats_A: B, N, D
+        feats_B: B, N, E
+        feats_A_: (B', N', D) (if provided)
+        feats_B_: (B', N', E) (if provided)
+        detach_grad: bool, detach the gradient of the part of the feature matrix
+        """
+        # take the mean across last dimension # B, D
+        feats_A = feats_A.mean(dim=-2)
+        feats_B = feats_B.mean(dim=-2)
+
+        # normalize the features along the last dimension
+        feats_A = F.normalize(feats_A, dim=-1)
+        feats_B = F.normalize(feats_B, dim=-1)
+
+        if feats_A_ is None:
+            if detach_grad:
+                feats_A_ = feats_A.clone().detach()
+            else:
+                feats_A_ = feats_A
+        else:
+            feats_A_ = feats_A_.mean(dim=-2)
+            feats_A_ = F.normalize(feats_A_, dim=-1)
+            if detach_grad:
+                feats_A_ = feats_A_.detach()
+
+        if feats_B_ is None:
+            if detach_grad:
+                feats_B_ = feats_B.clone().detach()
+            else:
+                feats_B_ = feats_B
+        else:
+            feats_B_ = feats_B_.mean(dim=-2)
+            feats_B_ = F.normalize(feats_B_, dim=-1)
+            if detach_grad:
+                feats_B_ = feats_B_.detach()
+
+        # compute the kernel matrix --> sample2sample similarity matrix for both A and B # B, B
+        kernel_matrix_A = feats_A @ feats_A_.transpose(0, 1)
+        kernel_matrix_B = feats_B @ feats_B_.transpose(0, 1)
+
+        if remove_diag:
+            # TODO: Support non-square (B, B') matrices for feats_A_ and feats_B_
+            B = kernel_matrix_A.shape[0]
+            kernel_matrix_A = kernel_matrix_A[~torch.eye(B, dtype=torch.bool)].reshape(B, B-1)
+            kernel_matrix_B = kernel_matrix_B[~torch.eye(B, dtype=torch.bool)].reshape(B, B-1)
+
+        # normalize the rows for both kernel matrices
+        kernel_matrix_A = F.normalize(kernel_matrix_A, dim=-1)
+        kernel_matrix_B = F.normalize(kernel_matrix_B, dim=-1)
+
+        # compute the similarity of the kernel matrices between A and B
+        # Since each row is now a unit vector, the dot product of corresponding rows
+        # will be 1 if they are identical.
+        alignment_score = (kernel_matrix_A * kernel_matrix_B).sum(dim=-1)  # B
+
+        # average the alignment score across the samples
+        alignment_score = alignment_score.mean(dim=0)
+        return alignment_score.item()
+
+    @staticmethod
+    def sample2sample_kernel_alignment_score_jsd(feats_A, feats_B, feats_A_=None, feats_B_=None, src_temp=1.0, tgt_temp=1.0, detach_grad=False, remove_diag=False):
+        """
+        Compute a sample-to-sample kernel alignment score using Jensen-Shannon Divergence.
+        1. Average feats_A and feats_B across the N dimension to get (B, D) and (B, E).
+        2. Normalize features along the last dimension.
+        3. Compute sample-to-sample similarity matrices for A and B (B, B).
+        4. Convert these matrices to probability distributions (softmax).
+        5. Compute the JSD between these distributions.
+        6. Convert JSD to an alignment score = 1 - JSD_mean, return as a scalar.
+
+        Args:
+            feats_A: (B, N, D)
+            feats_B: (B, N, E)
+            feats_A_: (B', N', D) (if provided)
+            feats_B_: (B', N', E) (if provided)
+            src_temp: float, temperature for softmax applied to feats_A
+            tgt_temp: float, temperature for softmax applied to feats_B
+            detach_grad: bool, detach the gradient of the part of the feature matrix
+
+        Returns:
+            alignment_score: a scalar float value.
+        """
+        # Average features across the N dimension: (B, N, D) -> (B, D)
+        feats_A = feats_A.mean(dim=1)
+        feats_B = feats_B.mean(dim=1)
+
+        # Normalize the features
+        feats_A = F.normalize(feats_A, dim=-1)
+        feats_B = F.normalize(feats_B, dim=-1)
+
+        if feats_A_ is None:
+            if detach_grad:
+                feats_A_ = feats_A.clone().detach()
+            else:
+                feats_A_ = feats_A
+        else:
+            feats_A_ = feats_A_.mean(dim=1)
+            feats_A_ = F.normalize(feats_A_, dim=-1)
+            if detach_grad:
+                feats_A_ = feats_A_.detach()
+
+        if feats_B_ is None:
+            if detach_grad:
+                feats_B_ = feats_B.clone().detach()
+            else:
+                feats_B_ = feats_B
+        else:
+            feats_B_ = feats_B_.mean(dim=1)
+            feats_B_ = F.normalize(feats_B_, dim=-1)
+            if detach_grad:
+                feats_B_ = feats_B_.detach()
+
+        # Compute similarity matrices (B, B)
+        kernel_matrix_A = feats_A @ feats_A_.transpose(0, 1)
+        kernel_matrix_B = feats_B @ feats_B_.transpose(0, 1)
+
+        if remove_diag:
+            # TODO: Support non-square (B, B') matrices for feats_A_ and feats_B_
+            B = kernel_matrix_A.shape[0]
+            kernel_matrix_A = kernel_matrix_A[~torch.eye(B, dtype=torch.bool)].reshape(B, B-1)
+            kernel_matrix_B = kernel_matrix_B[~torch.eye(B, dtype=torch.bool)].reshape(B, B-1)
+        # print(kernel_matrix_A.shape, kernel_matrix_B.shape)
+
+        # Convert similarities to probability distributions
+        P = F.softmax(kernel_matrix_A / src_temp, dim=-1)  # (B, B)
+        Q = F.softmax(kernel_matrix_B / tgt_temp, dim=-1)  # (B, B)
+        M = 0.5 * (P + Q)  # Mixture distribution
+
+        eps = 1e-10
+        P_clamped = P.clamp(min=eps)
+        Q_clamped = Q.clamp(min=eps)
+        M_clamped = M.clamp(min=eps)
+
+        # Compute KL divergences using F.kl_div
+        # KL(P||M) = sum(P * log(P/M)) over dim=-1
+        # Using F.kl_div: input=logM, target=P
+        # logM = M_clamped.log()
+
+        # Compute KL(P||M) and KL(Q||M) row-wise
+        # KL(P||M) = sum_over_j P_j * log(P_j/M_j)
+        KL_PM = (P_clamped * (P_clamped.log() - M_clamped.log())).sum(dim=-1)  # (B)
+        KL_QM = (Q_clamped * (Q_clamped.log() - M_clamped.log())).sum(dim=-1)  # (B)
+
+        # # equivalent using F.kl_div
+        # KL_PM = F.kl_div(logM, P_clamped, reduction='none', log_target=False).sum(dim=-1)  # (B,)
+        # KL_QM = F.kl_div(logM, Q_clamped, reduction='none', log_target=False).sum(dim=-1)  # (B,)
+
+        # JSD in base 2
+        log2 = torch.log(torch.tensor(2.0))
+        JSD = 0.5 * (KL_PM + KL_QM) / log2  # (B,)
+
+        # Mean JSD across batch
+        JSD_mean = JSD.mean()
+
+        # Alignment score: 1 - JSD
+        alignment_score = 1.0 - JSD_mean
         return alignment_score.item()
 
     @staticmethod

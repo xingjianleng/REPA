@@ -199,7 +199,7 @@ def main(args):
         latents_bias=latents_bias,
         weighting=args.weighting,
         loss_type=args.loss_type,
-        gather_feats=args.gather_feats,
+        ka_gather_feats=args.ka_gather_feats,
     )
     if accelerator.is_main_process:
         logger.info(f"SiT Parameters: {sum(p.numel() for p in model.parameters()):,}")
@@ -338,6 +338,7 @@ def main(args):
                     "compute_alignment": global_step % args.log_alignment_steps == 0,
                     "ka_aft_proj": args.ka_aft_proj,
                     "ka_detach_grad": args.ka_detach_grad,
+                    "ka_remove_diag": args.ka_remove_diag,
                     "log_alignment_metrics": args.log_alignment_metrics,
                     "max_score_across_layers": args.max_score_across_layers,
                     "cknna_topk": args.cknna_topk,
@@ -498,11 +499,12 @@ def parse_args(input_args=None):
     parser.add_argument("--num-workers", type=int, default=4)
 
     # loss
-    parser.add_argument("--gather-feats", action='store_true', help="Gather features across GPUs for sample2sample alignment loss computation")
     parser.add_argument("--path-type", type=str, default="linear", choices=["linear", "cosine"])
     parser.add_argument("--loss-type", type=str, default=None, choices=["patch2patch", "sample2sample", "patch2patch_jsd", "sample2sample_jsd"])
     parser.add_argument("--ka-aft-proj", action="store_true", help="Perform kernel alignment with features after projection.")
     parser.add_argument("--ka-detach-grad", action="store_true", help="Detach gradients for one matrix for kernel alignment (stop grad for one part of features).")
+    parser.add_argument("--ka-gather-feats", action='store_true', help="Gather features across GPUs for sample2sample alignment loss computation")
+    parser.add_argument("--ka-remove-diag", action="store_true", help="Remove diagonal elements in the kernel matrix.")
     parser.add_argument("--prediction", type=str, default="v", choices=["v"]) # currently we only support v-prediction
     parser.add_argument("--cfg-prob", type=float, default=0.1)
     parser.add_argument("--enc-type", type=str, default='dinov2-vit-b')

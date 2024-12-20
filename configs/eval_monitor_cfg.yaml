@@ -1,17 +1,23 @@
 monitored_experiments:
   # NOTE: Add more or comment out the experiments you want to monitor below
+
+  # baseline
+  sit-xl-base-50k:
+    projector_embed_dims: 768
+    model: SiT-XL/2
+
   # REPA
   sit-xl-linear-dinov2-b-enc8-50k:
     projector_embed_dims: 768
     model: SiT-XL/2
 
   # REPA + patch2patch
-  sit-xl-linear-dinov2-b-enc8-patch2patch-coeff0.2-50k:
+  sit-xl-linear-dinov2-b-enc8-patch2patch-0.2-0.2-coeff0.2-50k:
     projector_embed_dims: 768
     model: SiT-XL/2
 
   # REPA + sample2sample
-  sit-xl-linear-dinov2-b-enc8-sample2sample-coeff0.2-50k:
+  sit-xl-linear-dinov2-b-enc8-sample2sample-0.2-0.2-coeff0.2-50k:
     projector_embed_dims: 768
     model: SiT-XL/2
 
@@ -26,7 +32,7 @@ monitored_experiments:
     model: SiT-XL/2
 
   # REPA + patch2patch_jsd
-  sit-xl-linear-dinov2-b-enc8-patch2patch-jsd-coeff0.2-50k:
+  sit-xl-linear-dinov2-b-enc8-patch2patch-jsd-0.2-0.2-coeff0.2-50k:
     projector_embed_dims: 768
     model: SiT-XL/2
 
@@ -36,161 +42,11 @@ monitored_experiments:
     model: SiT-XL/2
 
   # REPA + sample2sample_jsd
-  sit-xl-linear-dinov2-b-enc8-sample2sample-jsd-coeff0.2-50k:
+  sit-xl-linear-dinov2-b-enc8-sample2sample-jsd-0.2-0.2-coeff0.2-50k:
     projector_embed_dims: 768
     model: SiT-XL/2
 
   # sample2sample_jsd
   sit-xl-linear-dinov2-b-enc8-sample2sample-jsd-only-coeff0.2-50k:
-    projector_embed_dims: 768
-    model: SiT-XL/2
-
-  # REPA + patch2patch + aftproj
-  sit-xl-linear-dinov2-b-enc8-patch2patch-aftproj-coeff0.2-50k:
-    projector_embed_dims: 768
-    model: SiT-XL/2
-
-  # REPA + patch2patch_jsd + aftproj
-  sit-xl-linear-dinov2-b-enc8-patch2patch-jsd-aftproj-coeff0.2-50k:
-    projector_embed_dims: 768
-    model: SiT-XL/2
-
-  # REPA + sample2sample + aftproj
-  sit-xl-linear-dinov2-b-enc8-sample2sample-aftproj-coeff0.2-50k:
-    projector_embed_dims: 768
-    model: SiT-XL/2
-
-  # REPA + sample2sample_jsd + aftproj
-  sit-xl-linear-dinov2-b-enc8-sample2sample-jsd-aftproj-coeff0.2-50k:
-    projector_embed_dims: 768
-    model: SiT-XL/2
-
-  # REPA + patch2patch + detach
-  sit-xl-linear-dinov2-b-enc8-patch2patch-detach-coeff0.2-50k:
-    projector_embed_dims: 768
-    model: SiT-XL/2
-
-  # REPA + patch2patch_jsd + detach
-  sit-xl-linear-dinov2-b-enc8-patch2patch-jsd-detach-coeff0.2-50k:
-    projector_embed_dims: 768
-    model: SiT-XL/2
-
-  # REPA + sample2sample + detach
-  sit-xl-linear-dinov2-b-enc8-sample2sample-detach-coeff0.2-50k:
-    projector_embed_dims: 768
-    model: SiT-XL/2
-
-  # REPA + sample2sample_jsd + detach
-  sit-xl-linear-dinov2-b-enc8-sample2sample-jsd-detach-coeff0.2-50k:
-    projector_embed_dims: 768
-    model: SiT-XL/2
-
-  # baseline
-  sit-xl-base-50k:
-    projector_embed_dims: 768
-    model: SiT-XL/2
-
-  # REPA + sample2sample_jsd + 1.0 + 1.0
-  sit-xl-linear-dinov2-b-enc8-sample2sample-jsd-1.0-1.0-coeff0.2-50k:
-    projector_embed_dims: 768
-    model: SiT-XL/2
-
-  # REPA + sample2sample_jsd + 0.2 + 1.0
-  sit-xl-linear-dinov2-b-enc8-sample2sample-jsd-0.2-1.0-coeff0.2-50k:
-    projector_embed_dims: 768
-    model: SiT-XL/2
-  
-  # REPA + sample2sample_jsd + 0.2 + 1.5
-  sit-xl-linear-dinov2-b-enc8-sample2sample-jsd-0.2-1.5-coeff0.2-50k:
-    projector_embed_dims: 768
-    model: SiT-XL/2
-  
-  # REPA + sample2sample_jsd + 0.5 + 1.0
-  sit-xl-linear-dinov2-b-enc8-sample2sample-jsd-0.5-1.0-coeff0.2-50k:
-    projector_embed_dims: 768
-    model: SiT-XL/2
-
-  # REPA + sample2sample_jsd + 1.0 + 0.2
-  sit-xl-linear-dinov2-b-enc8-sample2sample-jsd-1.0-0.2-coeff0.2-50k:
-    projector_embed_dims: 768
-    model: SiT-XL/2
-  
-  # REPA + sample2sample_jsd + 1.0 + 0.5
-  sit-xl-linear-dinov2-b-enc8-sample2sample-jsd-1.0-0.5-coeff0.2-50k:
-    projector_embed_dims: 768
-    model: SiT-XL/2
-  
-  # REPA + sample2sample_jsd + 1.5 + 0.2
-  sit-xl-linear-dinov2-b-enc8-sample2sample-jsd-1.5-0.2-coeff0.2-50k:
-    projector_embed_dims: 768
-    model: SiT-XL/2
-
-  # REPA + sample2sample_jsd + 1.0 + 1.0 + aftproj
-  sit-xl-linear-dinov2-b-enc8-sample2sample-jsd-1.0-1.0-aftproj-coeff0.2-50k:
-    projector_embed_dims: 768
-    model: SiT-XL/2
-
-  # REPA + sample2sample_jsd + 0.2 + 1.0 + aftproj
-  sit-xl-linear-dinov2-b-enc8-sample2sample-jsd-0.2-1.0-aftproj-coeff0.2-50k:
-    projector_embed_dims: 768
-    model: SiT-XL/2
-  
-  # REPA + sample2sample_jsd + 0.2 + 1.5 + aftproj
-  sit-xl-linear-dinov2-b-enc8-sample2sample-jsd-0.2-1.5-aftproj-coeff0.2-50k:
-    projector_embed_dims: 768
-    model: SiT-XL/2
-  
-  # REPA + sample2sample_jsd + 0.5 + 1.0 + aftproj
-  sit-xl-linear-dinov2-b-enc8-sample2sample-jsd-0.5-1.0-aftproj-coeff0.2-50k:
-    projector_embed_dims: 768
-    model: SiT-XL/2
-
-  # REPA + sample2sample_jsd + 1.0 + 0.2
-  sit-xl-linear-dinov2-b-enc8-sample2sample-jsd-1.0-0.2-aftproj-coeff0.2-50k:
-    projector_embed_dims: 768
-    model: SiT-XL/2
-  
-  # REPA + sample2sample_jsd + 1.0 + 0.5
-  sit-xl-linear-dinov2-b-enc8-sample2sample-jsd-1.0-0.5-aftproj-coeff0.2-50k:
-    projector_embed_dims: 768
-    model: SiT-XL/2
-  
-  # REPA + sample2sample_jsd + 1.5 + 0.2
-  sit-xl-linear-dinov2-b-enc8-sample2sample-jsd-1.5-0.2-aftproj-coeff0.2-50k:
-    projector_embed_dims: 768
-    model: SiT-XL/2
-
-  # sample2sample_v2_jsd + 0.2 + 0.2
-  sit-xl-linear-dinov2-b-enc8-sample2sample-v2-jsd-0.2-0.2-only-coeff0.2-50k:
-    projector_embed_dims: 768
-    model: SiT-XL/2
-
-  # REPA + sample2sample_v2_jsd + 0.2 + 0.2
-  sit-xl-linear-dinov2-b-enc8-sample2sample-v2-jsd-0.2-0.2-coeff0.2-50k:
-    projector_embed_dims: 768
-    model: SiT-XL/2
-
-  # REPA + sample2sample + 0.2 + 0.2 + 2gpus, alternative to increase batch size
-  sit-xl-linear-dinov2-b-enc8-sample2sample-0.2-0.2-coeff0.2-50k-2gpus:
-    projector_embed_dims: 768
-    model: SiT-XL/2
-
-  # REPA + sample2sample + 0.2 + 0.2 + detach, fix the wrong detach experiment...
-  sit-xl-linear-dinov2-b-enc8-sample2sample-detach-0.2-0.2-coeff0.2-50k:
-    projector_embed_dims: 768
-    model: SiT-XL/2
-
-  # REPA + sample2sample_jsd + 0.2 + 0.2 + 2gpus, alternative to increase batch size
-  sit-xl-linear-dinov2-b-enc8-sample2sample-jsd-0.2-0.2-coeff0.2-50k-2gpus:
-    projector_embed_dims: 768
-    model: SiT-XL/2
-
-  # REPA + sample2sample_jsd + 0.2 + 0.2 + detach, fix the wrong detach experiment...
-  sit-xl-linear-dinov2-b-enc8-sample2sample-jsd-0.2-0.2-detach-coeff0.2-50k:
-    projector_embed_dims: 768
-    model: SiT-XL/2
-
-  # sample2sample_jsd + 0.2 + 0.2 + seed7234, to make sure `red` plot is not an outlier
-  sit-xl-linear-dinov2-b-enc8-sample2sample-jsd-0.2-0.2-only-coeff0.2-50k-seed7234:
     projector_embed_dims: 768
     model: SiT-XL/2
