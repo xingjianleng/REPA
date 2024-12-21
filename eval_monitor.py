@@ -1,6 +1,7 @@
 import os
 import time
-import yaml
+# import yaml
+import json
 import subprocess
 
 # Constants
@@ -48,10 +49,11 @@ rm {npz_path}
 rm -r {exp_sample_dir}"""
 
 
-def load_config(cfg_path):
-    with open(cfg_path, 'r') as file:
-        config = yaml.safe_load(file)
-    return config.get('monitored_experiments', {})
+# NOTE: We've remove the dependency on a predefined yaml configuration file
+# def load_config(cfg_path):
+#     with open(cfg_path, 'r') as file:
+#         config = yaml.safe_load(file)
+#     return config.get('monitored_experiments', {})
 
 
 def main():
@@ -61,13 +63,34 @@ def main():
     os.makedirs(JOB_FILES_TEMP, exist_ok=True)
 
     # Load monitored experiments from the configuration file
-    monitored_experiments = load_config(CFG_PATH)
-    if not monitored_experiments:
-        print("No experiments to monitor. Exiting.")
-        return
+    # monitored_experiments = load_config(CFG_PATH)
+    # if not monitored_experiments:
+    #     print("No experiments to monitor. Exiting.")
+    #     return
 
     while True:
-        for exp_name, params in monitored_experiments.items():
+        for exp_name in sorted(os.listdir(EXP_FOLDER)):
+        # for exp_name, params in monitored_experiments.items():
+            with open(os.path.join(EXP_FOLDER, exp_name, "args.json"), "r") as f:
+                config = json.load(f)
+
+            # NOTE: We are only running experiments with DINOv2 series models
+            # Get the projector_embed_dims by the encoder type, add more if needed later
+            if "dinov2-vit-s" in config["enc_type"]:
+                projector_embed_dims = 384
+            elif "dinov2-vit-b" in config["enc_type"]:
+                projector_embed_dims = 768
+            elif "dinov2-vit-l" in config["enc_type"]:
+                projector_embed_dims = 1024
+            elif "dinov2-vit-g" in config["enc_type"]:
+                projector_embed_dims = 1536
+            else:
+                raise NotImplementedError(f"Unsupported model: {config['enc_type']}")
+            params = {
+                "model": config["model"],
+                "projector_embed_dims": projector_embed_dims,
+            }
+
             ckpt_path = os.path.join(EXP_FOLDER, exp_name, "checkpoints")
             if not os.path.exists(ckpt_path):
                 continue
