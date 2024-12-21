@@ -50,3 +50,8 @@ monitored_experiments:
   sit-xl-linear-dinov2-b-enc8-sample2sample-jsd-0.2-0.2-only-coeff0.2-50k:
     projector_embed_dims: 768
     model: SiT-XL/2
+
+  # sample2sample_jsd + keepdiag
+  sit-xl-linear-dinov2-b-enc8-sample2sample-jsd-0.2-0.2-only-coeff0.2-keepdiag-50k:
+    projector_embed_dims: 768
+    model: SiT-XL/2

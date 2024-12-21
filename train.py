@@ -255,12 +255,13 @@ def main(args):
     global_step = 0
     if args.resume_step > 0:
         ckpt_name = str(args.resume_step).zfill(7) +'.pt'
-        if args.continue_train_exp_name is not None:
-            cont_dir = args.continue_train_exp_name
+        if args.continue_train_exp_dir is not None:
+            # If we directly specify the directory to the experiment to continue...
+            cont_dir = args.continue_train_exp_dir
         else:
-            cont_dir = args.exp_name
+            cont_dir = os.path.join(args.output_dir, args.exp_name)
         ckpt = torch.load(
-            f'{os.path.join(args.output_dir, cont_dir)}/checkpoints/{ckpt_name}',
+            f'{cont_dir}/checkpoints/{ckpt_name}',
             map_location='cpu',
         )
         model.load_state_dict(ckpt['model'])
@@ -448,7 +449,7 @@ def parse_args(input_args=None):
     parser.add_argument("--report-to", type=str, default="wandb")
     parser.add_argument("--sampling-steps", type=int, default=10000)
     parser.add_argument("--resume-step", type=int, default=0)
-    parser.add_argument("--continue-train-exp-name", type=str, default=None)
+    parser.add_argument("--continue-train-exp-dir", type=str, default=None)
 
     # model
     parser.add_argument("--model", type=str)
