@@ -267,6 +267,7 @@ class SILoss:
 
         # compute the kernel matrix --> sample2sample similarity matrix for both A and B # B, B
         kernel_matrix_A = feats_A @ feats_A_.transpose(0, 1)
+        # kernel_matrix_A = torch.eye(feats_A.shape[0], device=feats_A.device)
         kernel_matrix_B = feats_B @ feats_B_.transpose(0, 1)
 
         if remove_diag:
@@ -365,6 +366,7 @@ class SILoss:
 
         # Convert similarities to probability distributions
         P = F.softmax(kernel_matrix_A / src_temp, dim=-1)  # (B, B)
+        # P = torch.eye(kernel_matrix_A.shape[0], device=kernel_matrix_A.device)
         Q = F.softmax(kernel_matrix_B / tgt_temp, dim=-1)  # (B, B)
         M = 0.5 * (P + Q)  # Mixture distribution
 

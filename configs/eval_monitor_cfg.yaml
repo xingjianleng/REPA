@@ -55,3 +55,13 @@ monitored_experiments:
   sit-xl-linear-dinov2-b-enc8-sample2sample-jsd-0.2-0.2-only-coeff0.2-keepdiag-50k:
     projector_embed_dims: 768
     model: SiT-XL/2
+
+  # sample2sample_jsd + keepdiag + eye
+  sit-xl-linear-dinov2-b-enc8-sample2sample-0.2-0.2-only-coeff0.2-keepdiag-eye-kernel-50k:
+    projector_embed_dims: 768
+    model: SiT-XL/2
+
+  # sample2sample_jsd + keepdiag + eye + kernel
+  sit-xl-linear-dinov2-b-enc8-sample2sample-jsd-0.2-0.2-only-coeff0.2-keepdiag-eye-kernel-50k:
+    projector_embed_dims: 768
+    model: SiT-XL/2
